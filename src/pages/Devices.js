@@ -9,6 +9,7 @@ const Devices = () => {
     deviceConfig, 
     addDevice, 
     removeDevice, 
+    updateDevice,
     toggleDeviceEnabled,
     autoDetectDevices, 
     getFilteredDevices,
@@ -20,6 +21,7 @@ const Devices = () => {
   const { connectionStatus, publishMessage } = useMqtt();
   
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [selectedDevices, setSelectedDevices] = useState(new Set());
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [newDevice, setNewDevice] = useState({
@@ -28,16 +30,11 @@ const Devices = () => {
     topic: '',
     room: 'Living Room'
   });
+  const [editDevice, setEditDevice] = useState(null);
 
   const deviceList = getFilteredDevices();
   const deviceTypes = Object.keys(deviceConfig);
   const rooms = [...new Set(Object.values(devices).filter(device => device && device.room).map(device => device.room))];
-  
-  // Debug logging
-  console.log('Devices page - Raw devices count:', Object.keys(devices).length);
-  console.log('Devices page - Raw devices:', Object.values(devices));
-  console.log('Devices page - Filtered devices count:', deviceList.length);
-  console.log('Devices page - Device filters:', deviceFilters);
   
   // Device statistics
   const totalDevices = Object.keys(devices).length;
@@ -49,9 +46,9 @@ const Devices = () => {
     online: Object.values(devices).filter(device => device.type === type && device.isOnline).length
   })).filter(stat => stat.count > 0);
 
-  const handleAddDevice = () => {
+  const handleAddDevice = async () => {
     if (newDevice.name && newDevice.topic) {
-      addDevice(newDevice);
+      await addDevice(newDevice);
       setNewDevice({
         name: '',
         type: 'temperature_sensor',
@@ -62,43 +59,54 @@ const Devices = () => {
     }
   };
 
-  const handleAutoDetect = () => {
-    console.log('Auto-detect button clicked');
-    console.log('Connection status:', connectionStatus);
-    console.log('Current devices count:', Object.keys(devices).length);
-    
-    const detectedDevices = autoDetectDevices();
-    console.log('Auto-detected devices:', detectedDevices);
-    
-    if (detectedDevices.length > 0) {
-      console.log(`Adding ${detectedDevices.length} detected devices...`);
-      detectedDevices.forEach((device, index) => {
-        console.log(`Adding device ${index + 1}:`, device);
-        addDevice(device);
+  const handleEditDevice = (device) => {
+    setEditDevice({
+      id: device.id,
+      name: device.name,
+      type: device.type,
+      topic: device.topic,
+      room: device.room
+    });
+    setShowEditModal(true);
+  };
+
+  const handleSaveEditDevice = async () => {
+    if (editDevice && editDevice.name && editDevice.topic) {
+      // Update the device using the updateDevice function from context
+      await updateDevice(editDevice.id, {
+        name: editDevice.name,
+        type: editDevice.type,
+        topic: editDevice.topic,
+        room: editDevice.room,
+        icon: deviceConfig[editDevice.type]?.icon || 'alert-circle',
+        controllable: deviceConfig[editDevice.type]?.controllable || false,
+        config: deviceConfig[editDevice.type] || {}
       });
-    } else {
-      console.log('No devices detected');
+      
+      setEditDevice(null);
+      setShowEditModal(false);
     }
   };
 
-  const handleRemoveDevice = (deviceId) => {
-    if (window.confirm('Are you sure you want to remove this device?')) {
-      // Add a small delay to show visual feedback
-      const deviceElement = document.querySelector(`[data-device-id="${deviceId}"]`);
-      if (deviceElement) {
-        deviceElement.style.opacity = '0.5';
-        deviceElement.style.transform = 'scale(0.95)';
-        deviceElement.style.transition = 'all 0.2s ease-out';
+  const handleAutoDetect = async () => {
+    const detectedDevices = autoDetectDevices();
+    
+    if (detectedDevices.length > 0) {
+      for (let i = 0; i < detectedDevices.length; i++) {
+        await addDevice(detectedDevices[i]);
       }
-      
-      setTimeout(() => {
-        removeDevice(deviceId);
-        setSelectedDevices(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(deviceId);
-          return newSet;
-        });
-      }, 200);
+    }
+  };
+
+  const handleRemoveDevice = async (deviceId) => {
+    if (window.confirm('Are you sure you want to remove this device?')) {
+      // Immediate remove without delay for better UX
+      await removeDevice(deviceId);
+      setSelectedDevices(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(deviceId);
+        return newSet;
+      });
     }
   };
 
@@ -122,23 +130,12 @@ const Devices = () => {
     }
   };
 
-  const handleBulkAction = (action) => {
+  const handleBulkAction = async (action) => {
     if (action === 'remove' && selectedDevices.size > 0) {
       if (window.confirm(`Are you sure you want to remove ${selectedDevices.size} selected devices?`)) {
-        // Add visual feedback for bulk delete
-        selectedDevices.forEach(deviceId => {
-          const deviceElement = document.querySelector(`[data-device-id="${deviceId}"]`);
-          if (deviceElement) {
-            deviceElement.style.opacity = '0.5';
-            deviceElement.style.transform = 'scale(0.95)';
-            deviceElement.style.transition = 'all 0.2s ease-out';
-          }
-        });
-        
-        setTimeout(() => {
-          selectedDevices.forEach(deviceId => removeDevice(deviceId));
-          setSelectedDevices(new Set());
-        }, 200);
+        // Immediate bulk remove without delay for better UX
+        await Promise.all(Array.from(selectedDevices).map(deviceId => removeDevice(deviceId)));
+        setSelectedDevices(new Set());
       }
     }
   };
@@ -160,13 +157,7 @@ const Devices = () => {
   };
 
   const handleCleanupInvalidDevices = () => {
-    console.log('Manual cleanup triggered');
-    const cleanedCount = cleanupInvalidDevices();
-    if (cleanedCount > 0) {
-      alert(`Cleaned up ${cleanedCount} invalid/null devices from the system.`);
-    } else {
-      alert('No invalid devices found. All devices are valid.');
-    }
+    cleanupInvalidDevices();
   };
 
 
@@ -192,10 +183,8 @@ const Devices = () => {
       }
     ];
     
-    console.log('Sending test MQTT messages for auto-detection...');
     testTopics.forEach((test, index) => {
       setTimeout(() => {
-        console.log(`Sending test message ${index + 1}:`, test);
         publishMessage(test.topic, test.payload, 0);
       }, index * 1000);
     });
@@ -548,7 +537,18 @@ const Devices = () => {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleDeviceEnabled(device.id);
+                    handleEditDevice(device);
+                  }}
+                  className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-primary-600"
+                  title="Edit device"
+                >
+                  <Icon name="edit" size={16} />
+                </button>
+                
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    await toggleDeviceEnabled(device.id);
                   }}
                   className={`p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${
                     device.enabled ? 'text-success-600' : 'text-gray-400'
@@ -729,6 +729,104 @@ const Devices = () => {
                 disabled={!newDevice.name || !newDevice.topic}
               >
                 Add Device
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEditModal && editDevice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Edit Device
+              </h3>
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditDevice(null);
+                }}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+              >
+                <Icon name="x" size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Device Name
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Living Room Temperature"
+                  value={editDevice.name}
+                  onChange={(e) => setEditDevice({ ...editDevice, name: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Device Type
+                </label>
+                <select
+                  className="select"
+                  value={editDevice.type}
+                  onChange={(e) => setEditDevice({ ...editDevice, type: e.target.value })}
+                >
+                  {deviceTypes.map(type => (
+                    <option key={type} value={type}>
+                      {getDeviceTypeName(type)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  MQTT Topic
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="home/livingroom/temp"
+                  value={editDevice.topic}
+                  onChange={(e) => setEditDevice({ ...editDevice, topic: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Room
+                </label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Living Room"
+                  value={editDevice.room}
+                  onChange={(e) => setEditDevice({ ...editDevice, room: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditDevice(null);
+                }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEditDevice}
+                className="btn btn-primary"
+                disabled={!editDevice.name || !editDevice.topic}
+              >
+                Save Changes
               </button>
             </div>
           </div>

@@ -14,6 +14,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dashboardConfig, setDashboardConfig] = useState({});
+  const [userSettings, setUserSettings] = useState({});
 
   // Check if user is authenticated on app load
   useEffect(() => {
@@ -31,10 +32,11 @@ export const AuthProvider = ({ children }) => {
         if (data.authenticated) {
           setUser(data.user);
           await loadDashboardConfig();
+          await loadUserSettings();
         }
       }
     } catch (error) {
-      console.error('Auth check failed:', error);
+      // Removed console.error for production
     } finally {
       setLoading(false);
     }
@@ -43,6 +45,7 @@ export const AuthProvider = ({ children }) => {
   const login = async (userData) => {
     setUser(userData);
     await loadDashboardConfig();
+    await loadUserSettings();
   };
 
   const logout = async () => {
@@ -55,9 +58,10 @@ export const AuthProvider = ({ children }) => {
       if (response.ok) {
         setUser(null);
         setDashboardConfig({});
+        setUserSettings({});
       }
     } catch (error) {
-      console.error('Logout failed:', error);
+      // Removed console.error for production
     }
   };
 
@@ -72,8 +76,48 @@ export const AuthProvider = ({ children }) => {
         setDashboardConfig(data.config || {});
       }
     } catch (error) {
-      console.error('Failed to load dashboard config:', error);
+      // Removed console.error for production
     }
+  };
+
+  const loadUserSettings = async () => {
+    try {
+      const response = await fetch('/api/auth/user-settings', {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUserSettings(data.settings || {});
+      }
+    } catch (error) {
+      // Removed console.error for production
+    }
+  };
+
+  const saveUserSetting = async (key, value) => {
+    try {
+      const response = await fetch('/api/auth/user-settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ key, value }),
+      });
+      
+      if (response.ok) {
+        setUserSettings(prev => ({ ...prev, [key]: value }));
+        return true;
+      }
+      return false;
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const getUserSetting = (key, defaultValue = null) => {
+    return userSettings[key] || defaultValue;
   };
 
   const saveDashboardConfig = async (config) => {
@@ -88,18 +132,19 @@ export const AuthProvider = ({ children }) => {
       });
       
       if (response.ok) {
+        const data = await response.json();
         setDashboardConfig(config);
         return true;
+      } else {
+        const errorData = await response.text();
+        return false;
       }
-      return false;
     } catch (error) {
-      console.error('Failed to save dashboard config:', error);
       return false;
     }
   };
 
   const refreshDashboardConfig = async () => {
-    console.log('Force refreshing dashboard config...');
     await loadDashboardConfig();
   };
 
@@ -107,10 +152,13 @@ export const AuthProvider = ({ children }) => {
     user,
     loading,
     dashboardConfig,
+    userSettings,
     login,
     logout,
     saveDashboardConfig,
     refreshDashboardConfig,
+    saveUserSetting,
+    getUserSetting,
     isAuthenticated: !!user
   };
 

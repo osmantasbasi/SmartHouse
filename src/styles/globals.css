@@ -22,6 +22,21 @@
     @apply bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700;
   }
   
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
   .btn {
     @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 touch-manipulation;
     min-height: 44px; /* iOS touch target minimum */
@@ -102,6 +117,26 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+  }
+  
+  /* Edit mode specific styles */
+  .widget-card.edit-mode {
+    @apply ring-2 ring-orange-300 dark:ring-orange-600 shadow-lg;
+    cursor: move;
+  }
+  
+  .widget-card.edit-mode:hover {
+    @apply ring-orange-400 dark:ring-orange-500 shadow-xl;
+  }
+  
+  /* React Grid Layout styles for edit mode */
+  .react-grid-item.react-draggable-dragging .widget-card {
+    @apply ring-4 ring-orange-400 dark:ring-orange-500 shadow-2xl;
+    transform: rotate(2deg);
+  }
+  
+  .react-grid-item.react-resizable-resizing .widget-card {
+    @apply ring-4 ring-blue-400 dark:ring-blue-500;
   }
   
   .navbar {
@@ -225,6 +260,7 @@
     cursor: w-resize;
   }
   
+  /* Modern Grid Layout Styles */
   .react-grid-layout {
     position: relative;
     min-height: 200px;
@@ -237,35 +273,64 @@
     }
   }
   
+  /* Grid Item Placeholder - More visible when dragging */
   .react-grid-item.react-grid-placeholder {
-    @apply bg-primary-200 dark:bg-primary-800 opacity-60 rounded-lg border-2 border-primary-300 dark:border-primary-700;
-    transition: all 0.2s ease;
+    @apply bg-primary-100 dark:bg-primary-900 opacity-80 rounded-lg border-2 border-dashed border-primary-400 dark:border-primary-600;
+    transition: all 0.15s ease;
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(var(--color-primary-500), 0.1) 10px,
+      rgba(var(--color-primary-500), 0.1) 20px
+    );
   }
   
+  /* Smooth transitions for grid items */
   .react-grid-item.cssTransforms {
-    transition-property: transform;
+    transition-property: transform, box-shadow;
     transition-duration: 200ms;
-    transition-timing-function: ease;
+    transition-timing-function: cubic-bezier(0.4, 0.0, 0.2, 1);
   }
   
+  /* Item being resized */
   .react-grid-item.resizing {
-    z-index: 1000;
+    z-index: 100;
     will-change: width, height;
+    transition: none;
   }
   
+  .react-grid-item.resizing .widget-card {
+    @apply border-2 border-primary-500 dark:border-primary-400;
+    box-shadow: 0 0 0 2px rgba(var(--color-primary-500), 0.2);
+  }
+  
+  /* Item being dragged */
   .react-grid-item.react-draggable-dragging {
-    z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    transition: none;
+    cursor: grabbing !important;
   }
   
-  /* Ensure widgets can be resized properly without scrollbars */
+  .react-grid-item.react-draggable-dragging .widget-card {
+    @apply shadow-2xl border-primary-500 dark:border-primary-400;
+    transform: scale(1.02);
+    opacity: 0.9;
+  }
+  
+  /* Widget card styling */
   .widget-card {
-    @apply card p-4 hover:shadow-md transition-shadow duration-200;
+    @apply card p-4 hover:shadow-lg transition-all duration-200;
     min-height: 100px;
     height: 100%;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    cursor: grab;
+  }
+  
+  .widget-card:active {
+    cursor: grabbing;
   }
   
   /* Mobile: Adjust widget padding */
@@ -276,12 +341,134 @@
     }
   }
   
-  /* Hide resize handles in both edit and normal mode */
+  /* Resize handles - visible and styled */
   .react-grid-item > .react-resizable-handle {
-    display: block !important;
-    opacity: 0 !important;
-    background: transparent !important;
-    border: none !important;
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    box-sizing: border-box;
+  }
+  
+  .react-grid-item > .react-resizable-handle::after {
+    content: "";
+    position: absolute;
+    box-sizing: border-box;
+    @apply bg-gray-400 dark:bg-gray-600;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+  
+  .react-grid-item:hover > .react-resizable-handle::after {
+    opacity: 1;
+  }
+  
+  /* Southeast handle (bottom-right corner) */
+  .react-resizable-handle-se {
+    bottom: 0;
+    right: 0;
+    cursor: se-resize;
+  }
+  
+  .react-resizable-handle-se::after {
+    bottom: 3px;
+    right: 3px;
+    width: 5px;
+    height: 5px;
+    border-right: 2px solid;
+    border-bottom: 2px solid;
+    @apply border-gray-400 dark:border-gray-500;
+  }
+  
+  /* Other resize handles */
+  .react-resizable-handle-s {
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    cursor: s-resize;
+    width: 50%;
+    height: 10px;
+  }
+  
+  .react-resizable-handle-s::after {
+    bottom: 3px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 30px;
+    height: 2px;
+    border-radius: 2px;
+  }
+  
+  .react-resizable-handle-e {
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: e-resize;
+    width: 10px;
+    height: 50%;
+  }
+  
+  .react-resizable-handle-e::after {
+    right: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2px;
+    height: 30px;
+    border-radius: 2px;
+  }
+  
+  .react-resizable-handle-n {
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    cursor: n-resize;
+    width: 50%;
+    height: 10px;
+  }
+  
+  .react-resizable-handle-n::after {
+    top: 3px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 30px;
+    height: 2px;
+    border-radius: 2px;
+  }
+  
+  .react-resizable-handle-w {
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: w-resize;
+    width: 10px;
+    height: 50%;
+  }
+  
+  .react-resizable-handle-w::after {
+    left: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2px;
+    height: 30px;
+    border-radius: 2px;
+  }
+  
+  /* Corner handles */
+  .react-resizable-handle-sw {
+    bottom: 0;
+    left: 0;
+    cursor: sw-resize;
+  }
+  
+  .react-resizable-handle-nw {
+    top: 0;
+    left: 0;
+    cursor: nw-resize;
+  }
+  
+  .react-resizable-handle-ne {
+    top: 0;
+    right: 0;
+    cursor: ne-resize;
   }
   
   /* Mobile responsive utilities */

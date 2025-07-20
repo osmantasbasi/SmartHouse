@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useDevices } from '../../contexts/DeviceContext';
 import Icon from '../ui/Icon';
 
-const DeviceWidget = ({ device }) => {
+const DeviceWidget = ({ device, isEditMode = false }) => {
   const { controlDevice, removeDevice } = useDevices();
   const [showControls, setShowControls] = useState(false);
   
@@ -146,7 +146,14 @@ const DeviceWidget = ({ device }) => {
   };
 
   return (
-    <div className="widget-card h-full">
+    <div className={`widget-card h-full ${isEditMode ? 'edit-mode' : ''}`}>
+      {/* Edit Mode Indicator */}
+      {isEditMode && (
+        <div className="absolute top-2 right-2 z-10 bg-orange-500 text-white text-xs px-2 py-1 rounded-full font-medium">
+          <Icon name="move" size={12} className="inline mr-1" />
+          EDIT
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-start justify-between mb-3 flex-shrink-0">
         <div className="flex items-center space-x-2 min-w-0 flex-1">

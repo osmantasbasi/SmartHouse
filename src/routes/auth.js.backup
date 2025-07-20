@@ -82,6 +82,7 @@ router.post('/login', async (req, res) => {
 router.post('/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) {
+      console.error('Logout error:', err);
       return res.status(500).json({ error: 'Could not log out' });
     }
     res.json({ message: 'Logout successful' });
@@ -110,10 +111,31 @@ router.get('/dashboard-config', async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    // Get dashboard config from dashboard_config table only
-    const dashboardConfig = await database.getDashboardConfig(req.session.userId);
+    // Get dashboard layout from user_settings table
+    const layoutString = await database.getUserSetting(req.session.userId, 'dashboard_layout');
+    let config = {};
     
-    res.json({ config: dashboardConfig || {} });
+    if (layoutString) {
+      try {
+        const layoutData = JSON.parse(layoutString);
+        // Convert to expected format
+        config = {
+          deviceLayouts: layoutData.layouts || [],
+          lastUpdated: layoutData.lastUpdated,
+          version: layoutData.version
+        };
+      } catch (error) {
+        // Removed console.error for production
+      }
+    }
+    
+    // Get other dashboard config from dashboard_config table
+    const dashboardConfig = await database.getDashboardConfig(req.session.userId);
+    if (dashboardConfig) {
+      config = { ...dashboardConfig, ...config };
+    }
+    
+    res.json({ config: config || {} });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -127,79 +149,20 @@ router.post('/dashboard-config', async (req, res) => {
 
     const { config } = req.body;
     
-    // Save complete config to dashboard_config table (including layouts)
-    const result = await database.saveDashboardConfig(req.session.userId, config);
+    // Save layout to user_settings table if it exists
+    if (config.deviceLayouts) {
+      const layoutData = {
+        layouts: config.deviceLayouts,
+        lastUpdated: new Date().toISOString(),
+        version: '1.0'
+      };
+      await database.saveUserSetting(req.session.userId, 'dashboard_layout', JSON.stringify(layoutData));
+    }
     
-    res.json({ message: 'Dashboard configuration saved', success: true, result });
-  } catch (error) {
-    res.status(500).json({ error: 'Internal server error', details: error.message });
-  }
-});
-
-// Debug endpoint to check what's in the database
-router.get('/debug-config', async (req, res) => {
-  try {
-    if (!req.session.userId) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-
-    const dashboardConfig = await database.getDashboardConfig(req.session.userId);
+    // Save other config to dashboard_config table
+    await database.saveDashboardConfig(req.session.userId, config);
     
-    res.json({ 
-      userId: req.session.userId,
-      config: dashboardConfig,
-      hasConfig: !!dashboardConfig,
-      configKeys: dashboardConfig ? Object.keys(dashboardConfig) : [],
-      layoutCount: dashboardConfig && dashboardConfig.deviceLayouts ? dashboardConfig.deviceLayouts.length : 0,
-      layoutItems: dashboardConfig && dashboardConfig.deviceLayouts ? dashboardConfig.deviceLayouts : []
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Internal server error', details: error.message });
-  }
-});
-
-// User settings endpoints
-router.get('/user-settings', async (req, res) => {
-  try {
-    if (!req.session.userId) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-
-    const settings = await database.getAllUserSettings(req.session.userId);
-    res.json({ settings, success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Internal server error', details: error.message });
-  }
-});
-
-router.post('/user-settings', async (req, res) => {
-  try {
-    if (!req.session.userId) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-
-    const { key, value } = req.body;
-    
-    if (!key) {
-      return res.status(400).json({ error: 'Setting key is required' });
-    }
-
-    await database.saveUserSetting(req.session.userId, key, value);
-    res.json({ message: 'User setting saved', success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Internal server error', details: error.message });
-  }
-});
-
-router.get('/user-settings/:key', async (req, res) => {
-  try {
-    if (!req.session.userId) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-
-    const { key } = req.params;
-    const value = await database.getUserSetting(req.session.userId, key);
-    res.json({ key, value, success: true });
+    res.json({ message: 'Dashboard configuration saved', success: true });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error', details: error.message });
   }

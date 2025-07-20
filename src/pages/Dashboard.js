@@ -9,11 +9,13 @@ import Icon from '../components/ui/Icon';
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
 const Dashboard = () => {
-  const { devices, deviceLayouts, updateLayout, clearAllDevices, cleanupInvalidDevices, autoDetectDevices, addDevice } = useDevices();
-  const { connectionStatus } = useMqtt();
-  const { refreshDashboardConfig } = useAuth();
-  const [isEditing, setIsEditing] = useState(false);
+  const { devices, deviceLayouts, updateLayout, clearAllDevices, cleanupInvalidDevices, autoDetectDevices, addDevice, deletedTopics, deviceFilters } = useDevices();
+  const { connectionStatus, reconnectionStatus } = useMqtt();
+  const { refreshDashboardConfig, saveDashboardConfig } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
 
   const deviceList = Object.values(devices).filter(device => device.enabled !== false); // Only show enabled devices
   const onlineDevices = deviceList.filter(device => device.isOnline);
@@ -29,6 +31,7 @@ const Dashboard = () => {
   };
 
   const timeoutRef = useRef(null);
+  const saveTimeoutRef = useRef(null);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -36,29 +39,118 @@ const Dashboard = () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
     };
   }, []);
 
-  const handleLayoutChange = useCallback((layout, layouts) => {
-    if (isEditing && layout) {
-      // Debounce layout updates to prevent excessive re-renders
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
+  // Auto-update layout when devices are enabled/disabled
+  useEffect(() => {
+    // When devices change (enabled/disabled), update the layout to ensure consistency
+    const enabledDeviceIds = new Set(deviceList.map(device => device.id));
+    const layoutDeviceIds = new Set(deviceLayouts.map(layout => layout.i));
+    
+    // Check if there's a mismatch between enabled devices and layout
+    const hasLayoutMismatch = enabledDeviceIds.size !== layoutDeviceIds.size ||
+                              [...enabledDeviceIds].some(id => !layoutDeviceIds.has(id));
+    
+    if (hasLayoutMismatch) {
+      // Clean up layout to only include enabled devices
+      const cleanedLayout = deviceLayouts.filter(layout => enabledDeviceIds.has(layout.i));
+      
+      // Add layout entries for enabled devices that don't have one
+      const missingLayouts = [...enabledDeviceIds]
+        .filter(id => !layoutDeviceIds.has(id))
+        .map(id => ({
+          i: id,
+          x: 0,
+          y: Infinity,
+          w: 4,
+          h: 4,
+          minW: 2,
+          maxW: 12,
+          minH: 2,
+          maxH: 8
+        }));
+      
+      const updatedLayout = [...cleanedLayout, ...missingLayouts];
+      
+      if (updatedLayout.length !== deviceLayouts.length || 
+          updatedLayout.some(item => !deviceLayouts.find(l => l.i === item.i))) {
+        updateLayout(updatedLayout);
       }
-      timeoutRef.current = setTimeout(() => {
-      updateLayout(layout);
-      }, 100);
     }
-  }, [isEditing, updateLayout]);
+  }, [deviceList, deviceLayouts, updateLayout]);
 
-  const handleManualSync = async () => {
+  // Auto-save function with debouncing
+  const autoSaveLayout = useCallback(async (layout) => {
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Set new timeout for auto-save (500ms delay to avoid too frequent saves)
+    saveTimeoutRef.current = setTimeout(async () => {
+      setIsSaving(true);
+      setSaveMessage('💾 Auto-saving layout...');
+
+      try {
+        // Update the layout in context
+        updateLayout(layout);
+        
+        // Build the complete config object for saving using real context data
+        const config = {
+          devices,
+          deviceLayouts: layout,
+          deletedTopics: Array.from(deletedTopics || new Set()),
+          deviceFilters: deviceFilters || {
+            type: 'all',
+            status: 'all',
+            search: '',
+            room: '',
+            controllable: '',
+            enabled: 'all'
+          },
+          lastUpdated: new Date().toISOString()
+        };
+
+        // Save to database
+        const success = await saveDashboardConfig(config);
+        
+        if (success) {
+          setSaveMessage('✅ Layout saved automatically!');
+        } else {
+          setSaveMessage('❌ Failed to auto-save layout');
+        }
+      } catch (error) {
+        setSaveMessage('❌ Error auto-saving layout');
+      } finally {
+        setIsSaving(false);
+        setTimeout(() => setSaveMessage(''), 2000);
+      }
+    }, 500);
+  }, [devices, deletedTopics, deviceFilters, updateLayout, saveDashboardConfig]);
+
+  const handleLayoutChange = useCallback((layout, layouts) => {
+    if (layout && isEditMode) {
+      // Auto-save the layout when changes are made
+      autoSaveLayout(layout);
+    }
+  }, [isEditMode, autoSaveLayout]);
+
+  const handleToggleEditMode = () => {
+    setIsEditMode(!isEditMode);
+    setSaveMessage('');
+  };
+
+  const handleSync = async () => {
     setIsSyncing(true);
     try {
-      console.log('Manual sync triggered by user');
       await refreshDashboardConfig();
-      console.log('Manual sync completed');
+      await cleanupInvalidDevices();
     } catch (error) {
-      console.error('Manual sync failed:', error);
+      // Removed console.error for production
     } finally {
       setIsSyncing(false);
     }
@@ -98,22 +190,13 @@ const Dashboard = () => {
 
   const stats = getQuickStats();
 
-  const handleAutoDetect = () => {
-    console.log('Auto-detect button clicked from Dashboard');
-    console.log('Connection status:', connectionStatus);
-    console.log('Current devices count:', Object.keys(devices).length);
-    
+  const handleAutoDetect = async () => {
     const detectedDevices = autoDetectDevices();
-    console.log('Auto-detected devices:', detectedDevices);
     
     if (detectedDevices.length > 0) {
-      console.log(`Adding ${detectedDevices.length} detected devices...`);
-      detectedDevices.forEach((device, index) => {
-        console.log(`Adding device ${index + 1}:`, device);
-        addDevice(device);
-      });
-    } else {
-      console.log('No devices detected');
+      for (let i = 0; i < detectedDevices.length; i++) {
+        await addDevice(detectedDevices[i]);
+      }
     }
   };
 
@@ -160,13 +243,55 @@ const Dashboard = () => {
             Dashboard
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1 text-sm sm:text-base">
-            Monitor and control your smart home devices
+            {deviceList.length} devices ({onlineDevices.length} online)
           </p>
         </div>
         
         <div className="flex flex-col space-y-3 sm:flex-row sm:items-center sm:space-y-0 sm:space-x-4">
+          {/* Connection Status Indicator */}
+          <div className={`flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${
+            connectionStatus.connected 
+              ? 'bg-success-100 dark:bg-success-900/30 text-success-800 dark:text-success-200'
+              : reconnectionStatus.isReconnecting
+              ? 'bg-warning-100 dark:bg-warning-900/30 text-warning-800 dark:text-warning-200'
+              : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'
+          }`}>
+            <div className={`w-2 h-2 rounded-full mr-2 ${
+              connectionStatus.connected 
+                ? 'bg-success-500 dark:bg-success-400'
+                : reconnectionStatus.isReconnecting
+                ? 'bg-warning-500 dark:bg-warning-400 animate-pulse'
+                : 'bg-gray-400 dark:bg-gray-500'
+            }`}></div>
+            {connectionStatus.connected 
+              ? 'MQTT Connected' 
+              : reconnectionStatus.isReconnecting 
+              ? `Reconnecting (${reconnectionStatus.currentRetries}/${reconnectionStatus.maxRetries})`
+              : 'MQTT Disconnected'
+            }
+          </div>
+          {/* Edit Mode Toggle */}
           <button
-            onClick={handleManualSync}
+            onClick={handleToggleEditMode}
+            className={`btn w-full sm:w-auto ${
+              isEditMode 
+                ? 'bg-orange-500 hover:bg-orange-600 text-white' 
+                : 'btn-secondary'
+            }`}
+            title={isEditMode ? 'Exit edit mode' : 'Enter edit mode to rearrange widgets'}
+          >
+            <Icon 
+              name={isEditMode ? 'lock' : 'edit'} 
+              size={20} 
+              className="mr-2" 
+            />
+            {isEditMode ? 'Exit Edit' : 'Edit Layout'}
+          </button>
+
+
+
+          <button
+            onClick={handleSync}
             disabled={isSyncing}
             className="btn btn-secondary w-full sm:w-auto"
             title="Sync dashboard with other devices"
@@ -179,24 +304,74 @@ const Dashboard = () => {
             {isSyncing ? 'Syncing...' : 'Sync'}
           </button>
           
-          <button
-            onClick={() => setIsEditing(!isEditing)}
-            className={`btn w-full sm:w-auto ${isEditing ? 'btn-primary' : 'btn-secondary'}`}
-          >
-            <Icon name={isEditing ? 'check' : 'edit'} size={20} className="mr-2" />
-            {isEditing ? 'Done' : 'Edit Layout'}
-          </button>
-          
-          <div className="flex items-center justify-center sm:justify-start space-x-2">
-            <div className={`w-2 h-2 rounded-full ${
-              connectionStatus.connected ? 'bg-success-500' : 'bg-danger-500'
-            }`} />
-            <span className="text-sm text-gray-600 dark:text-gray-400">
-              {connectionStatus.connected ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
+
         </div>
       </div>
+
+      {/* Reconnection Warning Banner */}
+      {reconnectionStatus.lastFailure && !reconnectionStatus.isReconnecting && !connectionStatus.connected && (
+        <div className="mb-6 p-4 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg">
+          <div className="flex items-center">
+            <Icon name="wifi-off" size={20} className="mr-3 text-danger-600 dark:text-danger-400" />
+            <div>
+              <p className="text-danger-800 dark:text-danger-200 font-medium">
+                MQTT Broker Bağlantısı Başarısız
+              </p>
+              <p className="text-danger-600 dark:text-danger-400 text-sm mt-1">
+                {reconnectionStatus.maxRetries} deneme yapıldı ancak broker'a bağlanılamadı. 
+                Lütfen bağlantı ayarlarınızı kontrol edin.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Mode Info Banner */}
+      {isEditMode && (
+        <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-6">
+          <div className="flex items-start space-x-3">
+            <Icon name="info" size={20} className="text-orange-600 dark:text-orange-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-orange-800 dark:text-orange-200">
+                Edit Mode Active
+              </h3>
+              <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
+                You can now drag and resize widgets. Changes will be saved automatically.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Notification - Top Right */}
+      {saveMessage && (
+        <div className="fixed top-4 right-4 z-50 animate-fade-in">
+          <div className={`px-3 py-2 rounded-lg shadow-lg ${
+            saveMessage.includes('✅') 
+              ? 'bg-green-500 text-white'
+              : saveMessage.includes('💾')
+              ? 'bg-blue-500 text-white'
+              : 'bg-red-500 text-white'
+          }`}>
+            <div className="flex items-center space-x-2">
+              <Icon 
+                name={
+                  saveMessage.includes('✅') ? 'check' : 
+                  saveMessage.includes('💾') ? 'save' : 
+                  'alert-circle'
+                } 
+                size={14} 
+                className={saveMessage.includes('💾') ? 'animate-pulse' : ''}
+              />
+              <span className="text-xs font-medium">
+                {saveMessage.includes('💾') ? 'Saving...' : 
+                 saveMessage.includes('✅') ? 'Saved successfully' : 
+                 'Save failed'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick Stats */}
       <div className="grid mobile-grid-6 gap-3 sm:gap-4 mb-6 sm:mb-8">
@@ -290,42 +465,27 @@ const Dashboard = () => {
         <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4">
           Device Overview
         </h2>
-        
-        {isEditing && (
-          <div className="mb-4 p-3 sm:p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-            <div className="flex items-start space-x-2">
-              <Icon name="grid-3x3" size={16} className="text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-              <div className="text-xs sm:text-sm text-blue-800 dark:text-blue-200">
-                <strong>Layout Edit Mode:</strong>
-                <div className="mt-1 space-y-1">
-                  <div className="hidden sm:block">Drag widgets to move them • Hover over edges/corners to resize • Changes auto-save</div>
-                  <div className="sm:hidden">Drag widgets to move them • Changes auto-save</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         <ResponsiveGridLayout
-          className={`layout ${isEditing ? 'editing-mode' : ''}`}
+          className="layout"
           layouts={layouts}
           breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
           cols={{ lg: 12, md: 8, sm: 4, xs: 2, xxs: 1 }}
-          rowHeight={60}
-          margin={[6, 6]}
+          rowHeight={80}
+          margin={[4, 4]}
           containerPadding={[0, 0]}
-          isDraggable={isEditing}
-          isResizable={isEditing && window.innerWidth >= 768}
+          isDraggable={isEditMode}
+          isResizable={isEditMode}
           onLayoutChange={handleLayoutChange}
           compactType="vertical"
           preventCollision={false}
           useCSSTransforms={true}
           autoSize={true}
-          resizeHandles={window.innerWidth >= 768 ? ['s', 'w', 'e', 'n', 'sw', 'nw', 'se', 'ne'] : []}
+          resizeHandles={isEditMode && window.innerWidth >= 768 ? ['s', 'w', 'e', 'n', 'sw', 'nw', 'se', 'ne'] : []}
           allowOverlap={false}
           isBounded={true}
           transformScale={1}
-          draggableHandle=".drag-handle"
+          draggableHandle={isEditMode ? ".widget-card" : ""}
         >
           {deviceList.map((device) => {
             const layout = deviceLayouts.find(l => l.i === device.id);
@@ -338,14 +498,14 @@ const Dashboard = () => {
                   y: layout?.y || Infinity,
                   w: layout?.w || 6,
                   h: layout?.h || 6,
-                  minW: window.innerWidth >= 768 ? 4 : 1,
-                  maxW: window.innerWidth >= 768 ? 12 : 1,
-                  minH: 4,
-                  maxH: 10
+                  minW: 2,
+                  maxW: 12,
+                  minH: 2,
+                  maxH: 8
                 }}
                 className="touch-manipulation"
               >
-                <DeviceWidget device={device} />
+                <DeviceWidget device={device} isEditMode={isEditMode} />
               </div>
             );
           })}

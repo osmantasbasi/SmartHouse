@@ -12,9 +12,8 @@ class Database {
     const dbPath = path.join(__dirname, '../../database.sqlite');
     this.db = new sqlite3.Database(dbPath, (err) => {
       if (err) {
-        console.error('Error opening database:', err);
+        // Error opening database
       } else {
-        console.log('Connected to SQLite database');
         this.createTables();
       }
     });
@@ -48,7 +47,7 @@ class Database {
     const createDashboardConfigTable = `
       CREATE TABLE IF NOT EXISTS dashboard_config (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL UNIQUE,
         config_data TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -124,15 +123,41 @@ class Database {
   // Dashboard configuration methods
   async saveDashboardConfig(userId, configData) {
     return new Promise((resolve, reject) => {
-      const sql = `
-        INSERT OR REPLACE INTO dashboard_config (user_id, config_data, updated_at)
-        VALUES (?, ?, CURRENT_TIMESTAMP)
-      `;
-      this.db.run(sql, [userId, JSON.stringify(configData)], function(err) {
+      // First check if config exists for this user
+      const checkSql = 'SELECT id FROM dashboard_config WHERE user_id = ?';
+      this.db.get(checkSql, [userId], (err, row) => {
         if (err) {
           reject(err);
+          return;
+        }
+
+        if (row) {
+          // Update existing config
+          const updateSql = `
+            UPDATE dashboard_config 
+            SET config_data = ?, updated_at = CURRENT_TIMESTAMP 
+            WHERE user_id = ?
+          `;
+          this.db.run(updateSql, [JSON.stringify(configData), userId], function(updateErr) {
+            if (updateErr) {
+              reject(updateErr);
+            } else {
+              resolve({ id: row.id, updated: true });
+            }
+          });
         } else {
-          resolve({ id: this.lastID });
+          // Insert new config
+          const insertSql = `
+            INSERT INTO dashboard_config (user_id, config_data, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+          `;
+          this.db.run(insertSql, [userId, JSON.stringify(configData)], function(insertErr) {
+            if (insertErr) {
+              reject(insertErr);
+            } else {
+              resolve({ id: this.lastID, created: true });
+            }
+          });
         }
       });
     });
@@ -202,9 +227,9 @@ class Database {
     if (this.db) {
       this.db.close((err) => {
         if (err) {
-          console.error('Error closing database:', err);
+          // Error closing database
         } else {
-          console.log('Database connection closed');
+          // Database connection closed
         }
       });
     }

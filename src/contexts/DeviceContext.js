@@ -15,7 +15,7 @@ export const useDevices = () => {
 
 export const DeviceProvider = ({ children }) => {
   const { messages, subscribeToTopic, publishMessage, connectionStatus, unsubscribeFromTopic } = useMqtt();
-  const { dashboardConfig, saveDashboardConfig, refreshDashboardConfig, isAuthenticated } = useAuth();
+  const { dashboardConfig, saveDashboardConfig, refreshDashboardConfig, isAuthenticated, getUserSetting } = useAuth();
   const [devices, setDevices] = useState({});
   const [deviceLayouts, setDeviceLayouts] = useState([]);
   const [deviceOfflineTimers, setDeviceOfflineTimers] = useState({});
@@ -30,14 +30,19 @@ export const DeviceProvider = ({ children }) => {
   });
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
+  // Get sensor timeout from user settings
+  const getSensorTimeout = useCallback(() => {
+    const timeoutValue = getUserSetting('sensorTimeout', '60');
+    return (parseInt(timeoutValue) || 60) * 1000; // Convert to milliseconds
+  }, [getUserSetting]);
+
   // Periodic sync to ensure dashboard config is up to date
   useEffect(() => {
     if (!isAuthenticated) return;
 
     const syncInterval = setInterval(async () => {
-      console.log('Performing periodic dashboard config sync...');
       await refreshDashboardConfig();
-    }, 30000); // Sync every 30 seconds
+    }, 60000); // Increased to 60 seconds to reduce conflicts
 
     return () => clearInterval(syncInterval);
   }, [isAuthenticated, refreshDashboardConfig]);
@@ -45,37 +50,39 @@ export const DeviceProvider = ({ children }) => {
   // Load configuration from database when user is authenticated
   useEffect(() => {
     if (isAuthenticated && dashboardConfig) {
-      console.log('Loading dashboard config from database:', dashboardConfig);
+      // Always load if we have fewer devices locally than in config
+      const configDeviceCount = dashboardConfig.devices ? Object.keys(dashboardConfig.devices).length : 0;
+      const localDeviceCount = Object.keys(devices).length;
       
-      // Check if this is a newer config than what we have
+      // Skip only if we have the same or more devices and config is not newer
       const configLastUpdated = dashboardConfig.lastUpdated;
-      if (lastSyncTime && configLastUpdated && new Date(configLastUpdated) <= new Date(lastSyncTime)) {
-        console.log('Dashboard config is not newer than current state, skipping update');
+      const shouldSkip = lastSyncTime && 
+                        configLastUpdated && 
+                        new Date(configLastUpdated) <= new Date(lastSyncTime) && 
+                        localDeviceCount >= configDeviceCount;
+      
+      if (shouldSkip) {
         return;
       }
       
       // Load devices from database config
       if (dashboardConfig.devices) {
         setDevices(dashboardConfig.devices);
-        console.log('Loaded devices from database:', dashboardConfig.devices);
       }
       
       // Load device layouts from database config
       if (dashboardConfig.deviceLayouts) {
         setDeviceLayouts(dashboardConfig.deviceLayouts);
-        console.log('Loaded device layouts from database:', dashboardConfig.deviceLayouts);
       }
       
       // Load deleted topics from database config
       if (dashboardConfig.deletedTopics) {
         setDeletedTopics(new Set(dashboardConfig.deletedTopics));
-        console.log('Loaded deleted topics from database:', dashboardConfig.deletedTopics);
       }
       
       // Load device filters from database config
       if (dashboardConfig.deviceFilters) {
         setDeviceFilters(dashboardConfig.deviceFilters);
-        console.log('Loaded device filters from database:', dashboardConfig.deviceFilters);
       }
       
       // Update last sync time
@@ -95,12 +102,11 @@ export const DeviceProvider = ({ children }) => {
       });
       setLastSyncTime(null);
     }
-  }, [isAuthenticated, dashboardConfig, lastSyncTime]);
+  }, [isAuthenticated, dashboardConfig, lastSyncTime, devices, deviceLayouts]);
 
   // Migration function to move localStorage data to database (one-time)
   useEffect(() => {
     if (isAuthenticated && Object.keys(dashboardConfig).length === 0) {
-      console.log('Checking for localStorage data to migrate...');
       
       // Check if there's existing localStorage data to migrate
       const savedDevices = localStorage.getItem('smart-home-devices');
@@ -108,7 +114,6 @@ export const DeviceProvider = ({ children }) => {
       const savedDeletedTopics = localStorage.getItem('smart-home-deleted-topics');
       
       if (savedDevices || savedLayout || savedDeletedTopics) {
-        console.log('Found localStorage data, migrating to database...');
         
         let migratedDevices = {};
         let migratedLayouts = [];
@@ -127,10 +132,9 @@ export const DeviceProvider = ({ children }) => {
                 };
               });
               setDevices(migratedDevices);
-              console.log('Migrated devices from localStorage:', migratedDevices);
             }
           } catch (error) {
-            console.error('Error migrating devices:', error);
+            // Removed console.error for production
           }
         }
         
@@ -141,10 +145,9 @@ export const DeviceProvider = ({ children }) => {
             if (Array.isArray(parsedLayout) && parsedLayout.length > 0) {
               migratedLayouts = parsedLayout;
               setDeviceLayouts(parsedLayout);
-              console.log('Migrated layouts from localStorage:', parsedLayout);
             }
           } catch (error) {
-            console.error('Error migrating layouts:', error);
+            // Removed console.error for production
           }
         }
         
@@ -154,9 +157,8 @@ export const DeviceProvider = ({ children }) => {
             const topics = JSON.parse(savedDeletedTopics);
             migratedDeletedTopics = topics;
             setDeletedTopics(new Set(topics));
-            console.log('Migrated deleted topics from localStorage:', topics);
           } catch (error) {
-            console.error('Error migrating deleted topics:', error);
+            // Removed console.error for production
           }
         }
         
@@ -177,16 +179,13 @@ export const DeviceProvider = ({ children }) => {
           migratedAt: new Date().toISOString()
         };
         
-        console.log('Saving migrated config to database:', migratedConfig);
         saveDashboardConfig(migratedConfig).then(() => {
-          console.log('Migration completed successfully');
           // Clear localStorage after successful migration
           localStorage.removeItem('smart-home-devices');
           localStorage.removeItem('smart-home-layout');
           localStorage.removeItem('smart-home-deleted-topics');
-          console.log('Cleared localStorage after migration');
         }).catch(error => {
-          console.error('Failed to save migrated config:', error);
+          // Removed console.error for production
         });
       }
     }
@@ -194,7 +193,9 @@ export const DeviceProvider = ({ children }) => {
 
   // Save configuration to database when data changes
   const saveConfigToDatabase = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      return;
+    }
     
     const config = {
       devices,
@@ -204,46 +205,18 @@ export const DeviceProvider = ({ children }) => {
       lastUpdated: new Date().toISOString()
     };
     
-    console.log('Saving dashboard config to database:', config);
-    await saveDashboardConfig(config);
+    const success = await saveDashboardConfig(config);
+    if (!success) {
+      // Removed console.error for production
+    }
   }, [isAuthenticated, devices, deviceLayouts, deletedTopics, deviceFilters, saveDashboardConfig]);
 
-  // Save to database when devices change
-  useEffect(() => {
-    if (isAuthenticated && Object.keys(devices).length > 0) {
-      const timeoutId = setTimeout(() => {
-        saveConfigToDatabase();
-      }, 1000); // Debounce saves
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [devices, isAuthenticated, saveConfigToDatabase]);
-
-  // Save to database when layouts change
-  useEffect(() => {
-    if (isAuthenticated && deviceLayouts.length > 0) {
-      const timeoutId = setTimeout(() => {
-        saveConfigToDatabase();
-      }, 1000); // Debounce saves
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [deviceLayouts, isAuthenticated, saveConfigToDatabase]);
-
-  // Save to database when deleted topics change
-  useEffect(() => {
-    if (isAuthenticated) {
-      const timeoutId = setTimeout(() => {
-        saveConfigToDatabase();
-      }, 1000); // Debounce saves
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [deletedTopics, isAuthenticated, saveConfigToDatabase]);
+  // Note: Automatic saving has been disabled to prevent unwanted saves
+  // Save operations are now only triggered manually through Dashboard save button
+  // or when adding/removing devices manually
 
   // Function to clean up null/invalid devices
   const cleanupInvalidDevices = useCallback(() => {
-    console.log('🧹 Starting aggressive cleanup of null/invalid devices...');
     
     let cleanedCount = 0;
     let cleanedDevices = {};
@@ -276,7 +249,6 @@ export const DeviceProvider = ({ children }) => {
           device.topic.trim() !== '') {
         cleanedDevices[deviceId] = device;
       } else {
-        console.log('🗑️ Removing invalid device:', deviceId, device);
         cleanedCount++;
         
         // Clear offline timer if exists
@@ -286,7 +258,6 @@ export const DeviceProvider = ({ children }) => {
         
         // Unsubscribe if device has topic and we're connected
         if (device?.topic && connectionStatus.connected && unsubscribeFromTopic) {
-          console.log('📡 Unsubscribing from invalid device topic:', device.topic);
           unsubscribeFromTopic(device.topic);
         }
       }
@@ -309,7 +280,6 @@ export const DeviceProvider = ({ children }) => {
     
     if (cleanedLayouts.length !== deviceLayouts.length) {
       const layoutsRemoved = deviceLayouts.length - cleanedLayouts.length;
-      console.log(`🗑️ Cleaned up ${layoutsRemoved} invalid layouts`);
       setDeviceLayouts(cleanedLayouts);
     }
     
@@ -319,16 +289,13 @@ export const DeviceProvider = ({ children }) => {
       if (cleanedDevices[deviceId] && timer) {
         cleanedTimers[deviceId] = timer;
       } else if (timer) {
-        console.log('⏰ Clearing orphaned timer for:', deviceId);
         clearTimeout(timer);
       }
     });
     setDeviceOfflineTimers(cleanedTimers);
     
     if (cleanedCount > 0) {
-      console.log(`✅ Cleanup completed: ${cleanedCount} invalid devices removed`);
     } else {
-      console.log('✅ Cleanup completed: No invalid devices found');
     }
     
     return cleanedCount;
@@ -336,7 +303,6 @@ export const DeviceProvider = ({ children }) => {
 
   // Function to completely clear all devices and storage
   const clearAllDevices = useCallback(() => {
-    console.log('Clearing all devices and storage...');
     
     // Clear all offline timers
     Object.values(deviceOfflineTimers).forEach(timer => {
@@ -351,16 +317,11 @@ export const DeviceProvider = ({ children }) => {
     // Clear deleted topics
     setDeletedTopics(new Set());
     
-    // Save cleared state to database
-    if (isAuthenticated) {
-      saveConfigToDatabase();
-    }
+    // Note: Manual save required after clearing all devices
     
-    console.log('All devices and storage cleared');
   }, [deviceOfflineTimers, isAuthenticated, saveConfigToDatabase]);
 
   const clearDeletedTopics = useCallback(() => {
-    console.log('Clearing deleted topics...');
     setDeletedTopics(new Set());
   }, []);
 
@@ -384,7 +345,6 @@ export const DeviceProvider = ({ children }) => {
       );
       
       if (hasInvalidDevices && deviceArray.length > 0) {
-        console.log('Invalid devices detected, cleaning up...');
         cleanupInvalidDevices();
       }
     }, 1000);
@@ -395,14 +355,12 @@ export const DeviceProvider = ({ children }) => {
   // Auto-subscribe to all device topics when MQTT connection is established
   useEffect(() => {
     if (connectionStatus.connected) {
-      console.log('MQTT connected, subscribing to all topics with # wildcard...');
       // Subscribe to all topics to capture any MQTT messages for auto-detection
       subscribeToTopic('#');
       
       // Also subscribe to individual device topics if they exist
       if (Object.keys(devices).length > 0) {
         Object.values(devices).forEach(device => {
-          console.log('Auto-subscribing to device topic:', device.topic);
           subscribeToTopic(device.topic);
         });
       }
@@ -418,11 +376,9 @@ export const DeviceProvider = ({ children }) => {
 
     // Skip _send topics as they are for outgoing messages only
     if (topic.endsWith('_send')) {
-      console.log('Skipping _send topic:', topic);
       return;
     }
 
-    console.log('Received MQTT message:', { topic, message });
 
     // Find device by topic (exact match or wildcard match)
     const deviceId = Object.keys(devices).find(id => {
@@ -441,8 +397,7 @@ export const DeviceProvider = ({ children }) => {
             .replace(/#/g, '.*');
           return new RegExp(`^${regex}$`).test(topic);
         } catch (error) {
-          console.error('Error creating regex for topic:', deviceTopic, error);
-          return false;
+          // Removed console.error for production
         }
       }
       
@@ -459,7 +414,6 @@ export const DeviceProvider = ({ children }) => {
           parsedMessage = { value: message };
         }
         
-        console.log('Updating device:', deviceId, 'with data:', parsedMessage);
         
         // Clear existing offline timer for this device
         if (deviceOfflineTimers[deviceId]) {
@@ -477,9 +431,11 @@ export const DeviceProvider = ({ children }) => {
           }
         }));
         
-        // Set a timer to mark device as offline after 60 seconds of no activity
+        // Get current sensor timeout setting
+        const timeoutMs = getSensorTimeout();
+        
+        // Set a timer to mark device as offline after the configured timeout
         const offlineTimer = setTimeout(() => {
-          console.log('Device', deviceId, 'marked as offline due to timeout');
           setDevices(prev => ({
             ...prev,
             [deviceId]: {
@@ -492,22 +448,20 @@ export const DeviceProvider = ({ children }) => {
             delete newTimers[deviceId];
             return newTimers;
           });
-        }, 60000); // 60 seconds timeout
+        }, timeoutMs);
         
         setDeviceOfflineTimers(prev => ({
           ...prev,
           [deviceId]: offlineTimer
         }));
       } catch (error) {
-        console.error('Error processing MQTT message:', error);
+        // Removed console.error for production
       }
     } else {
-      console.log('No device found for topic:', topic);
-      console.log('Available devices:', Object.values(devices).map(d => ({ id: d.id, name: d.name, topic: d.topic })));
     }
-  }, [messages, devices]);
+  }, [messages, devices, getSensorTimeout]);
 
-  const addDevice = useCallback((deviceData) => {
+  const addDevice = useCallback(async (deviceData) => {
     const deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const configType = deviceConfig[deviceData.type] || {};
     
@@ -526,66 +480,71 @@ export const DeviceProvider = ({ children }) => {
       config: configType
     };
 
-    setDevices(prev => ({
-      ...prev,
+    const newDevices = {
+      ...devices,
       [deviceId]: newDevice
-    }));
+    };
+    setDevices(newDevices);
 
     // Subscribe to device topic if connected and remove from deleted topics if re-adding
     if (connectionStatus.connected) {
-      console.log('Subscribing to topic:', deviceData.topic);
       subscribeToTopic(deviceData.topic);
-    } else {
-      console.log('Not connected to MQTT, cannot subscribe to:', deviceData.topic);
     }
 
     // Remove topic from deleted topics if re-adding manually
-    setDeletedTopics(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(deviceData.topic);
-      return newSet;
-    });
+    const newDeletedTopics = new Set(deletedTopics);
+    newDeletedTopics.delete(deviceData.topic);
+    setDeletedTopics(newDeletedTopics);
 
     // Add to layout if not exists
-    setDeviceLayouts(prev => {
-      const exists = prev.find(layout => layout.i === deviceId);
-      if (!exists) {
-        return [...prev, {
-          i: deviceId,
-          x: 0,
-          y: Infinity,
-          w: 2,
-          h: 2,
-          minW: 1,
-          maxW: 6,
-          minH: 1,
-          maxH: 4
-        }];
-      }
-      return prev;
-    });
+    const exists = deviceLayouts.find(layout => layout.i === deviceId);
+    let newLayouts = deviceLayouts;
+    
+    if (!exists) {
+      newLayouts = [...deviceLayouts, {
+        i: deviceId,
+        x: 0,
+        y: Infinity,
+        w: 4,
+        h: 4,
+        minW: 2,
+        maxW: 12,
+        minH: 2,
+        maxH: 8
+      }];
+      setDeviceLayouts(newLayouts);
+    }
+
+    // Save changes to database immediately
+    if (isAuthenticated) {
+      const config = {
+        devices: newDevices,
+        deviceLayouts: newLayouts,
+        deletedTopics: Array.from(newDeletedTopics),
+        deviceFilters,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      await saveDashboardConfig(config);
+    }
 
     return deviceId;
-  }, [connectionStatus.connected, subscribeToTopic]);
+  }, [connectionStatus.connected, subscribeToTopic, devices, deviceLayouts, deletedTopics, deviceFilters, isAuthenticated, saveDashboardConfig]);
 
-  const removeDevice = useCallback((deviceId) => {
-    console.log('Removing device:', deviceId);
+  const removeDevice = useCallback(async (deviceId) => {
     const device = devices[deviceId];
     
     if (!device) {
-      console.log('Device not found:', deviceId);
       return;
     }
     
     // Add topic to deleted topics to prevent auto-detection from re-adding it
     if (device.topic) {
       setDeletedTopics(prev => new Set([...prev, device.topic]));
-      console.log('Added topic to deleted topics:', device.topic);
     }
     
     // Clear offline timer if exists
     if (deviceOfflineTimers[deviceId]) {
-      console.log('Clearing offline timer for device:', deviceId);
       clearTimeout(deviceOfflineTimers[deviceId]);
       setDeviceOfflineTimers(prev => {
         const newTimers = { ...prev };
@@ -596,72 +555,87 @@ export const DeviceProvider = ({ children }) => {
 
     // Unsubscribe from device topic if connected and device exists
     if (device.topic && connectionStatus.connected && unsubscribeFromTopic) {
-      console.log('Unsubscribing from topic:', device.topic);
       unsubscribeFromTopic(device.topic);
-      
-      // Also emit unsubscribe event to make sure it's properly handled
-      try {
-        // Additional cleanup - ensure topic is fully unsubscribed
-        console.log('Ensuring complete unsubscription from:', device.topic);
-      } catch (error) {
-        console.error('Error during unsubscription:', error);
-      }
     }
 
-    // Remove device from state
-    setDevices(prev => {
-      const newDevices = { ...prev };
-      delete newDevices[deviceId];
-      console.log('Device removed from state. Remaining devices:', Object.keys(newDevices).length);
-      
-      // Force cleanup of any null/undefined entries
-      const cleanedDevices = {};
-      Object.entries(newDevices).forEach(([id, deviceData]) => {
-        if (deviceData && typeof deviceData === 'object' && deviceData.id && deviceData.name) {
-          cleanedDevices[id] = deviceData;
-        } else {
-          console.log('Removing null/invalid device during cleanup:', id);
-        }
-      });
-      
-      return cleanedDevices;
-    });
+    // Remove device from state immediately
+    const newDevices = { ...devices };
+    delete newDevices[deviceId];
+    setDevices(newDevices);
 
-    // Remove from layout
-    setDeviceLayouts(prev => {
-      const newLayout = prev.filter(layout => layout && layout.i && layout.i !== deviceId);
-      console.log('Device removed from layout. Remaining layouts:', newLayout.length);
-      return newLayout;
-    });
+    // Remove from layout immediately
+    const newLayouts = deviceLayouts.filter(layout => layout && layout.i && layout.i !== deviceId);
+    setDeviceLayouts(newLayouts);
     
-    // Force immediate cleanup of invalid devices
-    setTimeout(() => {
-      console.log('Triggering post-removal cleanup...');
-      cleanupInvalidDevices();
-    }, 100);
+    // Save changes to database immediately to prevent reload from overriding
+    if (isAuthenticated) {
+      const config = {
+        devices: newDevices,
+        deviceLayouts: newLayouts,
+        deletedTopics: Array.from(deletedTopics).concat(device.topic ? [device.topic] : []),
+        deviceFilters,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      await saveDashboardConfig(config);
+    }
     
-    console.log('Device completely removed and cleaned:', deviceId);
-  }, [devices, deviceOfflineTimers, connectionStatus.connected, unsubscribeFromTopic, cleanupInvalidDevices]);
+  }, [devices, deviceLayouts, deviceOfflineTimers, connectionStatus.connected, unsubscribeFromTopic, isAuthenticated, saveDashboardConfig, deletedTopics, deviceFilters]);
 
-  const updateDevice = useCallback((deviceId, updates) => {
-    setDevices(prev => ({
-      ...prev,
+  const updateDevice = useCallback(async (deviceId, updates) => {
+    const updatedDevices = {
+      ...devices,
       [deviceId]: {
-        ...prev[deviceId],
+        ...devices[deviceId],
         ...updates
       }
-    }));
-  }, []);
+    };
+    setDevices(updatedDevices);
+    
+    // Save changes to database immediately to persist the state
+    if (isAuthenticated) {
+      const config = {
+        devices: updatedDevices,
+        deviceLayouts,
+        deletedTopics: Array.from(deletedTopics),
+        deviceFilters,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      await saveDashboardConfig(config);
+    }
+  }, [devices, deviceLayouts, deletedTopics, deviceFilters, isAuthenticated, saveDashboardConfig]);
 
-  const toggleDeviceEnabled = useCallback((deviceId) => {
+  const toggleDeviceEnabled = useCallback(async (deviceId) => {
     const device = devices[deviceId];
     if (!device) return;
     
     const newEnabledState = !device.enabled;
-    updateDevice(deviceId, { enabled: newEnabledState });
     
-    console.log(`Device ${device.name} ${newEnabledState ? 'enabled' : 'disabled'}`);
-  }, [devices, updateDevice]);
+    // Update device immediately for UI responsiveness
+    const updatedDevices = {
+      ...devices,
+      [deviceId]: {
+        ...device,
+        enabled: newEnabledState
+      }
+    };
+    setDevices(updatedDevices);
+    
+    // Save changes to database immediately to persist the state
+    if (isAuthenticated) {
+      const config = {
+        devices: updatedDevices,
+        deviceLayouts,
+        deletedTopics: Array.from(deletedTopics),
+        deviceFilters,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      await saveDashboardConfig(config);
+    }
+    
+  }, [devices, deviceLayouts, deletedTopics, deviceFilters, isAuthenticated, saveDashboardConfig]);
 
   const controlDevice = useCallback((deviceId, controlData) => {
     const device = devices[deviceId];
@@ -676,12 +650,12 @@ export const DeviceProvider = ({ children }) => {
       ...item,
       x: Math.max(0, item.x),
       y: Math.max(0, item.y),
-      w: Math.max(1, Math.min(6, item.w)),
-      h: Math.max(1, Math.min(4, item.h)),
-      minW: 1,
-      maxW: 6,
-      minH: 1,
-      maxH: 4
+      w: Math.max(2, Math.min(12, item.w)),
+      h: Math.max(2, Math.min(8, item.h)),
+      minW: 2,
+      maxW: 12,
+      minH: 2,
+      maxH: 8
     }));
     
     setDeviceLayouts(validatedLayout);
@@ -692,9 +666,6 @@ export const DeviceProvider = ({ children }) => {
     const detectedDevices = [];
     const recentTopics = new Set();
 
-    console.log('Auto-detecting devices from recent messages...');
-    console.log('Total available messages:', messages.length);
-    console.log('Recent messages:', messages.slice(0, 20).map(m => ({ topic: m.topic, message: m.message })));
 
     // Get unique topics from recent messages that don't have devices yet and aren't deleted
     const messagesToCheck = messages.slice(0, 100); // Check more messages
@@ -708,12 +679,9 @@ export const DeviceProvider = ({ children }) => {
       }
     });
 
-    console.log('New topics found for auto-detection:', Array.from(recentTopics));
 
     if (recentTopics.size === 0) {
-      console.log('No new topics found in MQTT messages');
       if (messages.length === 0) {
-        console.log('No MQTT messages available at all. Make sure MQTT broker is connected and sending messages.');
       }
       return [];
     }
@@ -730,7 +698,6 @@ export const DeviceProvider = ({ children }) => {
             : latestMessage.message;
         }
       } catch (error) {
-        console.log('Could not parse message for topic:', topic);
         messageData = { value: latestMessage?.message || 'unknown' };
       }
 
@@ -814,15 +781,8 @@ export const DeviceProvider = ({ children }) => {
         room: room
       });
       
-      console.log(`Detected device for topic ${topic}:`, {
-        type: detectedType,
-        name: deviceName,
-        room: room,
-        messageData: messageData
-      });
     });
 
-    console.log('Detected devices:', detectedDevices);
     return detectedDevices;
   }, [messages, devices, deletedTopics]);
 
@@ -840,13 +800,9 @@ export const DeviceProvider = ({ children }) => {
       device && device.id && typeof device === 'object'
     );
 
-    console.log('Total devices before filtering:', filtered.length);
-    console.log('Raw devices:', filtered.map(d => ({ id: d.id, name: d.name, topic: d.topic, isOnline: d.isOnline })));
-    console.log('Device filters:', deviceFilters);
 
     if (deviceFilters.type !== 'all') {
       filtered = filtered.filter(device => device.type === deviceFilters.type);
-      console.log('After type filter:', filtered.length);
     }
 
     if (deviceFilters.status !== 'all') {
@@ -855,12 +811,10 @@ export const DeviceProvider = ({ children }) => {
       } else if (deviceFilters.status === 'offline') {
         filtered = filtered.filter(device => device.isOnline !== true);
       }
-      console.log('After status filter:', filtered.length);
     }
 
     if (deviceFilters.room) {
       filtered = filtered.filter(device => device.room === deviceFilters.room);
-      console.log('After room filter:', filtered.length);
     }
 
     if (deviceFilters.controllable) {
@@ -869,7 +823,6 @@ export const DeviceProvider = ({ children }) => {
       } else if (deviceFilters.controllable === 'false') {
         filtered = filtered.filter(device => device.controllable !== true);
       }
-      console.log('After controllable filter:', filtered.length);
     }
 
     if (deviceFilters.enabled !== 'all') {
@@ -878,7 +831,6 @@ export const DeviceProvider = ({ children }) => {
       } else if (deviceFilters.enabled === 'false') {
         filtered = filtered.filter(device => device.enabled !== true);
       }
-      console.log('After enabled filter:', filtered.length);
     }
 
     if (deviceFilters.search) {
@@ -894,11 +846,8 @@ export const DeviceProvider = ({ children }) => {
                room.includes(searchLower) ||
                topic.includes(searchLower);
       });
-      console.log('After search filter:', filtered.length);
     }
 
-    console.log('Final filtered devices:', filtered.length);
-    console.log('Filtered device details:', filtered.map(d => ({ id: d.id, name: d.name, topic: d.topic, isOnline: d.isOnline })));
     
     return filtered;
   }, [devices, deviceFilters]);

@@ -21,6 +21,12 @@ export const MqttProvider = ({ children }) => {
     lastConnected: null,
     error: null
   });
+  const [reconnectionStatus, setReconnectionStatus] = useState({
+    isReconnecting: false,
+    currentRetries: 0,
+    maxRetries: 5,
+    lastFailure: null
+  });
   const [messages, setMessages] = useState([]);
   const [subscribedTopics, setSubscribedTopics] = useState(new Set());
 
@@ -31,16 +37,54 @@ export const MqttProvider = ({ children }) => {
 
     newSocket.on('connect', () => {
       setIsConnected(true);
-      console.log('Connected to server');
     });
 
     newSocket.on('disconnect', () => {
       setIsConnected(false);
-      console.log('Disconnected from server');
     });
 
     newSocket.on('connectionStatus', (status) => {
       setConnectionStatus(status);
+      
+      // Reset reconnection status if successfully connected
+      if (status.connected) {
+        setReconnectionStatus({
+          isReconnecting: false,
+          currentRetries: 0,
+          maxRetries: 5,
+          lastFailure: null
+        });
+      }
+      
+      // Update reconnection status if error contains retry information
+      if (status.error && status.error.includes('Yeniden bağlanma denemesi')) {
+        const match = status.error.match(/(\d+)\/(\d+)/);
+        if (match) {
+          setReconnectionStatus(prev => ({
+            ...prev,
+            isReconnecting: true,
+            currentRetries: parseInt(match[1]),
+            maxRetries: parseInt(match[2])
+          }));
+        }
+      }
+    });
+
+    newSocket.on('reconnectionFailed', (data) => {
+      setReconnectionStatus({
+        isReconnecting: false,
+        currentRetries: data.retries,
+        maxRetries: data.maxRetries,
+        lastFailure: new Date().toISOString()
+      });
+      
+      // Show browser notification if supported
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('MQTT Bağlantı Hatası', {
+          body: data.message,
+          icon: '/favicon.ico'
+        });
+      }
     });
 
     newSocket.on('mqttMessage', (data) => {
@@ -57,12 +101,19 @@ export const MqttProvider = ({ children }) => {
     });
 
     newSocket.on('subscriptionError', (error) => {
-      console.error('Subscription error:', error);
+      // Removed console.error for production
     });
 
     return () => {
       newSocket.close();
     };
+  }, []);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
   }, []);
 
   const connectToMqtt = useCallback(async (connectionParams) => {
@@ -118,19 +169,15 @@ export const MqttProvider = ({ children }) => {
 
   const unsubscribeFromTopic = useCallback((topic) => {
     if (!socket || !connectionStatus.connected) {
-      console.log('Cannot unsubscribe: socket not connected');
       return;
     }
 
-    console.log('Unsubscribing from topic:', topic);
     socket.emit('unsubscribe', { topic });
     
     // Remove from subscribed topics immediately
     setSubscribedTopics(prev => {
       const newSet = new Set(prev);
       newSet.delete(topic);
-      console.log('Topic removed from subscription list:', topic);
-      console.log('Remaining subscriptions:', Array.from(newSet));
       return newSet;
     });
     
@@ -146,7 +193,6 @@ export const MqttProvider = ({ children }) => {
     const sendTopic = topic.endsWith('_send') ? topic : `${topic}_send`;
     
     const payload = typeof message === 'string' ? message : JSON.stringify(message);
-    console.log(`Publishing to topic: ${sendTopic}`, payload);
     socket.emit('publish', { topic: sendTopic, message: payload, qos });
   }, [socket, connectionStatus.connected]);
 
@@ -157,6 +203,7 @@ export const MqttProvider = ({ children }) => {
   const value = {
     isConnected,
     connectionStatus,
+    reconnectionStatus,
     messages,
     subscribedTopics: Array.from(subscribedTopics),
     connectToMqtt,

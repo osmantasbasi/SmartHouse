@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useMqtt } from '../contexts/MqttContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import Icon from '../components/ui/Icon';
 
 const Settings = () => {
-  const { connectToMqtt, disconnectFromMqtt, connectionStatus } = useMqtt();
+  const { connectToMqtt, disconnectFromMqtt, connectionStatus, reconnectionStatus } = useMqtt();
   const { isDark, toggleTheme } = useTheme();
+  const { saveUserSetting, getUserSetting } = useAuth();
   
   const [connectionSettings, setConnectionSettings] = useState({
     brokerAddress: '',
@@ -39,6 +41,11 @@ const Settings = () => {
     key: ''
   });
 
+  // Sensor timeout setting state
+  const [sensorTimeout, setSensorTimeout] = useState(60);
+  const [isSavingTimeout, setIsSavingTimeout] = useState(false);
+  const [timeoutMessage, setTimeoutMessage] = useState('');
+
   useEffect(() => {
     // Load saved connection settings
     const saved = localStorage.getItem('mqtt-connection-settings');
@@ -47,10 +54,16 @@ const Settings = () => {
         const settings = JSON.parse(saved);
         setConnectionSettings(prev => ({ ...prev, ...settings }));
       } catch (error) {
-        console.error('Error loading connection settings:', error);
+        // Removed console.error for production
       }
     }
   }, []);
+
+  // Load sensor timeout setting
+  useEffect(() => {
+    const timeoutValue = getUserSetting('sensorTimeout', '60');
+    setSensorTimeout(parseInt(timeoutValue) || 60);
+  }, [getUserSetting]);
 
   // Load certificates on component mount
   useEffect(() => {
@@ -66,7 +79,7 @@ const Settings = () => {
         setCertificates(result.certificates || []);
       }
     } catch (error) {
-      console.error('Error loading certificates:', error);
+      // Removed console.error for production
     }
   };
 
@@ -254,6 +267,27 @@ const Settings = () => {
     }
   };
 
+  const saveSensorTimeout = async () => {
+    setIsSavingTimeout(true);
+    setTimeoutMessage('');
+
+    try {
+      const success = await saveUserSetting('sensorTimeout', sensorTimeout.toString());
+      
+      if (success) {
+        setTimeoutMessage('Sensor timeout setting saved successfully!');
+      } else {
+        setTimeoutMessage('Failed to save sensor timeout setting.');
+      }
+    } catch (error) {
+      setTimeoutMessage('Error saving sensor timeout setting.');
+    } finally {
+      setIsSavingTimeout(false);
+      // Clear message after 3 seconds
+      setTimeout(() => setTimeoutMessage(''), 3000);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8">
       <div>
@@ -271,6 +305,29 @@ const Settings = () => {
           <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
             MQTT Connection
           </h2>
+          
+          {/* Connection Status Banner */}
+          {reconnectionStatus.isReconnecting && (
+            <div className="mb-4 p-3 bg-warning-50 dark:bg-warning-900/20 border border-warning-200 dark:border-warning-800 rounded-lg">
+              <div className="flex items-center">
+                <Icon name="refresh" size={16} className="mr-2 text-warning-600 dark:text-warning-400 spinner" />
+                <span className="text-warning-800 dark:text-warning-200 text-sm">
+                  Yeniden bağlanma denemesi: {reconnectionStatus.currentRetries}/{reconnectionStatus.maxRetries}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {reconnectionStatus.lastFailure && !reconnectionStatus.isReconnecting && !connectionStatus.connected && (
+            <div className="mb-4 p-3 bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg">
+              <div className="flex items-center">
+                <Icon name="alert-triangle" size={16} className="mr-2 text-danger-600 dark:text-danger-400" />
+                <span className="text-danger-800 dark:text-danger-200 text-sm">
+                  MQTT broker bağlantısı başarısız! {reconnectionStatus.maxRetries} deneme yapıldı.
+                </span>
+              </div>
+            </div>
+          )}
           
           <div className="grid mobile-grid-2 gap-4 mb-6">
             <div>
@@ -389,13 +446,13 @@ const Settings = () => {
             {!connectionStatus.connected ? (
               <button
                 onClick={handleConnect}
-                disabled={isConnecting}
+                disabled={isConnecting || reconnectionStatus.isReconnecting}
                 className="btn btn-primary w-full sm:w-auto"
               >
-                {isConnecting ? (
+                {isConnecting || reconnectionStatus.isReconnecting ? (
                   <>
                     <Icon name="refresh" size={16} className="mr-2 spinner" />
-                    Connecting...
+                    {reconnectionStatus.isReconnecting ? 'Reconnecting...' : 'Connecting...'}
                   </>
                 ) : (
                   <>
@@ -459,6 +516,69 @@ const Settings = () => {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Sensor Settings */}
+        <div className="card p-4 sm:p-6">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
+            <Icon name="activity" size={20} className="mr-2 inline" />
+            Sensor Settings
+          </h2>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Sensor Timeout (seconds)
+              </label>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                Duration after which a sensor will be marked as offline if no data is received
+              </p>
+              <div className="flex items-center space-x-3">
+                <input
+                  type="number"
+                  min="10"
+                  max="3600"
+                  className="input w-24"
+                  value={sensorTimeout}
+                  onChange={(e) => setSensorTimeout(parseInt(e.target.value) || 60)}
+                />
+                <span className="text-sm text-gray-500 dark:text-gray-400">seconds</span>
+                <button
+                  onClick={saveSensorTimeout}
+                  disabled={isSavingTimeout}
+                  className="btn btn-primary"
+                >
+                  {isSavingTimeout ? (
+                    <>
+                      <Icon name="refresh" size={16} className="mr-2 spinner" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="save" size={16} className="mr-2" />
+                      Save
+                    </>
+                  )}
+                </button>
+              </div>
+              
+              {timeoutMessage && (
+                <div className={`mt-3 p-3 rounded-lg ${
+                  timeoutMessage.includes('success')
+                    ? 'bg-success-50 text-success-800 dark:bg-success-900/20 dark:text-success-200'
+                    : 'bg-danger-50 text-danger-800 dark:bg-danger-900/20 dark:text-danger-200'
+                }`}>
+                  {timeoutMessage}
+                </div>
+              )}
+              
+              <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                <p>• Minimum: 10 seconds</p>
+                <p>• Maximum: 3600 seconds (1 hour)</p>
+                <p>• Default: 60 seconds</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Certificate Management */}
@@ -771,11 +891,27 @@ const Settings = () => {
               <span className={`${
                 connectionStatus.connected 
                   ? 'text-success-600 dark:text-success-400' 
+                  : reconnectionStatus.isReconnecting
+                  ? 'text-warning-600 dark:text-warning-400'
                   : 'text-gray-900 dark:text-white'
               }`}>
-                {connectionStatus.connected ? 'Active' : 'Inactive'}
+                {connectionStatus.connected 
+                  ? 'Active' 
+                  : reconnectionStatus.isReconnecting 
+                  ? `Reconnecting (${reconnectionStatus.currentRetries}/${reconnectionStatus.maxRetries})`
+                  : 'Inactive'
+                }
               </span>
             </div>
+
+            {reconnectionStatus.lastFailure && (
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Last Failure:</span>
+                <span className="text-danger-600 dark:text-danger-400 text-xs">
+                  {new Date(reconnectionStatus.lastFailure).toLocaleString()}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>

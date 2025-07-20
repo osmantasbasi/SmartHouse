@@ -102,14 +102,8 @@ const Icon = ({
   const IconComponent = iconMap[name];
   
   if (!IconComponent) {
-    console.warn(`Icon "${name}" not found. Available icons:`, Object.keys(iconMap));
-    return React.createElement(iconMap['alert-circle'], { 
-      size, 
-      className, 
-      color, 
-      strokeWidth, 
-      ...props 
-    });
+    // Removed console.warn for production
+    return <div className={`w-4 h-4 ${className}`} />;
   }
 
   return React.createElement(IconComponent, { 
