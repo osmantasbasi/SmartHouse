@@ -11,7 +11,7 @@ import DevicesDebug from './components/ui/DevicesDebug';
 import Login from './components/auth/Login';
 import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
-import Settings from './pages/Settings';
+import Admin from './pages/Admin';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -86,7 +86,7 @@ const AppContent = () => {
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/dashboard" element={<Dashboard />} />
                       <Route path="/devices" element={<Devices />} />
-                      <Route path="/settings" element={<Settings />} />
+                      <Route path="/admin" element={<Admin />} />
                     </Routes>
                   </div>
                 </div>

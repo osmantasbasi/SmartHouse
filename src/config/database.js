@@ -1,6 +1,7 @@
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcrypt');
 const path = require('path');
+const fs = require('fs');
 
 class Database {
   constructor() {
@@ -26,6 +27,7 @@ class Database {
         username TEXT UNIQUE NOT NULL,
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
+        role TEXT DEFAULT 'user',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -55,9 +57,143 @@ class Database {
       )
     `;
 
+    const createAdminSettingsTable = `
+      CREATE TABLE IF NOT EXISTS admin_settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        setting_key TEXT UNIQUE NOT NULL,
+        setting_value TEXT,
+        setting_type TEXT DEFAULT 'string',
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    const createMqttConfigTable = `
+      CREATE TABLE IF NOT EXISTS mqtt_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        config_name TEXT UNIQUE NOT NULL,
+        broker_address TEXT NOT NULL,
+        port INTEGER NOT NULL,
+        use_tls BOOLEAN DEFAULT 0,
+        username TEXT,
+        password_hash TEXT,
+        is_active BOOLEAN DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
     this.db.run(createUsersTable);
     this.db.run(createUserSettingsTable);
     this.db.run(createDashboardConfigTable);
+    this.db.run(createAdminSettingsTable);
+    this.db.run(createMqttConfigTable);
+
+    // Add role column to existing users table if it doesn't exist
+    this.db.run(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'`, (err) => {
+      // Ignore error if column already exists
+    });
+
+    // Create initial admin user if no admin exists
+    this.createInitialAdmin();
+  }
+
+  // Load admin config from local file
+  loadAdminConfig() {
+    try {
+      const configPath = path.join(__dirname, 'admin.json');
+      if (fs.existsSync(configPath)) {
+        const configData = fs.readFileSync(configPath, 'utf8');
+        return JSON.parse(configData);
+      }
+    } catch (error) {
+      // Error loading admin config, use defaults
+    }
+    
+    // Return default config if file doesn't exist or can't be read
+    return {
+      defaultAdmin: {
+        username: 'superadmin',
+        email: 'superadmin@localhost',
+        password: 'admin123',
+        role: 'admin'
+      },
+      adminSettings: {
+        allowMultipleAdmins: true,
+        forcePasswordChange: false,
+        sessionTimeout: 86400000,
+        maxLoginAttempts: 5
+      },
+      systemSettings: {
+        maxUsers: 100,
+        globalSensorTimeout: 60,
+        systemName: 'Smart Home Dashboard',
+        enableRegistration: true,
+        defaultUserRole: 'user'
+      }
+    };
+  }
+
+  // Save admin config to local file
+  saveAdminConfig(config) {
+    try {
+      const configPath = path.join(__dirname, 'admin.json');
+      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Create initial admin user if none exists
+  async createInitialAdmin() {
+    try {
+      const adminConfig = this.loadAdminConfig();
+      const defaultAdmin = adminConfig.defaultAdmin;
+      
+      // First, check if superadmin user already exists
+      const existingUser = await this.getUserByUsername(defaultAdmin.username);
+      
+      if (existingUser) {
+        // User exists, make sure they have admin role
+        if (existingUser.role !== 'admin') {
+          this.db.run('UPDATE users SET role = ? WHERE username = ?', ['admin', defaultAdmin.username]);
+        }
+      } else {
+        // Check if any admin user exists
+        const sql = 'SELECT id FROM users WHERE role = ? LIMIT 1';
+        this.db.get(sql, ['admin'], async (err, row) => {
+          if (err) {
+            // Error checking for admin
+            return;
+          }
+
+          if (!row) {
+            // No admin user exists, create default one from config
+            try {
+              await this.createUser(defaultAdmin.username, defaultAdmin.email, defaultAdmin.password);
+              // Update the created user to admin role
+              this.db.run('UPDATE users SET role = ? WHERE username = ?', ['admin', defaultAdmin.username], (updateErr) => {
+                if (!updateErr) {
+                  // Add default admin settings from config
+                  const systemSettings = adminConfig.systemSettings;
+                  this.setAdminSetting('global_sensor_timeout', systemSettings.globalSensorTimeout.toString(), 'number', 'Global timeout for sensor offline detection');
+                  this.setAdminSetting('max_users', systemSettings.maxUsers.toString(), 'number', 'Maximum number of users allowed');
+                  this.setAdminSetting('system_name', systemSettings.systemName, 'string', 'System display name');
+                  this.setAdminSetting('enable_registration', systemSettings.enableRegistration.toString(), 'boolean', 'Allow new user registration');
+                  this.setAdminSetting('default_user_role', systemSettings.defaultUserRole, 'string', 'Default role for new users');
+                }
+              });
+            } catch (error) {
+              // Error creating admin user
+            }
+          }
+        });
+      }
+    } catch (error) {
+      // Error in initial admin creation
+    }
   }
 
   // User management methods
@@ -218,6 +354,103 @@ class Database {
             settings[row.setting_key] = row.setting_value;
           });
           resolve(settings);
+        }
+      });
+    });
+  }
+
+  // Admin user management methods
+  async getAllUsers() {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT id, username, email, role, created_at, updated_at FROM users ORDER BY created_at DESC';
+      this.db.all(sql, [], (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  }
+
+  async updateUserRole(userId, role) {
+    return new Promise((resolve, reject) => {
+      const sql = 'UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+      this.db.run(sql, [role, userId], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ id: userId, changes: this.changes });
+        }
+      });
+    });
+  }
+
+  async deleteUser(userId) {
+    return new Promise((resolve, reject) => {
+      const sql = 'DELETE FROM users WHERE id = ?';
+      this.db.run(sql, [userId], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ deleted: this.changes > 0 });
+        }
+      });
+    });
+  }
+
+  // Admin settings methods
+  async getAdminSetting(key) {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM admin_settings WHERE setting_key = ?';
+      this.db.get(sql, [key], (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row);
+        }
+      });
+    });
+  }
+
+  async setAdminSetting(key, value, type = 'string', description = '') {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        INSERT OR REPLACE INTO admin_settings (setting_key, setting_value, setting_type, description, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `;
+      this.db.run(sql, [key, value, type, description], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ id: this.lastID });
+        }
+      });
+    });
+  }
+
+  async getAllAdminSettings() {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM admin_settings ORDER BY setting_key';
+      this.db.all(sql, [], (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  }
+
+  // Helper function to manually make a user admin (for troubleshooting)
+  async makeUserAdmin(username) {
+    return new Promise((resolve, reject) => {
+      const sql = 'UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE username = ?';
+      this.db.run(sql, ['admin', username], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ username, changes: this.changes, isAdmin: this.changes > 0 });
         }
       });
     });

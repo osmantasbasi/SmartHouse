@@ -9,15 +9,32 @@ import Icon from '../components/ui/Icon';
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
 const Dashboard = () => {
-  const { devices, deviceLayouts, updateLayout, clearAllDevices, cleanupInvalidDevices, autoDetectDevices, addDevice, deletedTopics, deviceFilters } = useDevices();
+  const { 
+    devices, 
+    deviceLayouts, 
+    updateLayout, 
+    clearAllDevices, 
+    cleanupInvalidDevices, 
+    autoDetectDevices, 
+    addDevice, 
+    deletedTopics, 
+    deviceFilters,
+    getFilteredDevices,
+    setDeviceFilters,
+    getDevicesByType,
+    getDevicesByRoom
+  } = useDevices();
   const { connectionStatus, reconnectionStatus } = useMqtt();
   const { refreshDashboardConfig, saveDashboardConfig } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
 
-  const deviceList = Object.values(devices).filter(device => device.enabled !== false); // Only show enabled devices
+  // Use filtered devices instead of all enabled devices
+  const filteredDevices = getFilteredDevices().filter(device => device.enabled !== false);
+  const deviceList = filteredDevices; // Use filtered devices for dashboard
   const onlineDevices = deviceList.filter(device => device.isOnline);
   const offlineDevices = deviceList.filter(device => !device.isOnline);
 
@@ -200,7 +217,11 @@ const Dashboard = () => {
     }
   };
 
-  if (deviceList.length === 0) {
+  // Check if there are any devices at all (not filtered)
+  const totalDevices = Object.values(devices).filter(device => device.enabled !== false);
+  
+  // Show welcome screen only if there are no devices at all
+  if (totalDevices.length === 0) {
     return (
       <div className="max-w-4xl mx-auto px-2 sm:px-0">
         <div className="text-center py-8 sm:py-12">
@@ -243,7 +264,16 @@ const Dashboard = () => {
             Dashboard
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-1 text-sm sm:text-base">
-            {deviceList.length} devices ({onlineDevices.length} online)
+            {deviceList.length} 
+            {deviceList.length !== Object.values(devices).filter(device => device.enabled !== false).length 
+              ? ` of ${Object.values(devices).filter(device => device.enabled !== false).length}` 
+              : ''} 
+            devices ({onlineDevices.length} online)
+            {deviceList.length !== Object.values(devices).filter(device => device.enabled !== false).length && (
+              <span className="ml-1 text-indigo-600 dark:text-indigo-400 text-xs">
+                • filtered
+              </span>
+            )}
           </p>
         </div>
         
@@ -460,12 +490,174 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* Device Filters */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white">
+            Device Overview
+          </h2>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="btn btn-secondary text-sm"
+          >
+            <Icon name="filter" size={16} className="mr-2" />
+            {showFilters ? 'Hide Filters' : 'Show Filters'}
+          </button>
+        </div>
+
+        {showFilters && (
+          <div className="card p-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Search */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Search Devices
+                </label>
+                <div className="relative">
+                  <Icon name="search" size={16} className="absolute left-3 top-3 text-gray-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search by name, room, or topic..."
+                    className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    value={deviceFilters.search || ''}
+                    onChange={(e) => setDeviceFilters({ ...deviceFilters, search: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {/* Device Type Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Device Type
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  value={deviceFilters.type || 'all'}
+                  onChange={(e) => setDeviceFilters({ ...deviceFilters, type: e.target.value })}
+                >
+                  <option value="all">All Types</option>
+                  {[...new Set(Object.values(devices).map(device => device.type).filter(Boolean))].map(type => (
+                    <option key={type} value={type}>
+                      {type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Room Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Room
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  value={deviceFilters.room || 'all'}
+                  onChange={(e) => setDeviceFilters({ ...deviceFilters, room: e.target.value })}
+                >
+                  <option value="all">All Rooms</option>
+                  {[...new Set(Object.values(devices).map(device => device.room).filter(Boolean))].map(room => (
+                    <option key={room} value={room}>
+                      {room}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Status
+                </label>
+                <select
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  value={deviceFilters.status || 'all'}
+                  onChange={(e) => setDeviceFilters({ ...deviceFilters, status: e.target.value })}
+                >
+                  <option value="all">All Status</option>
+                  <option value="online">Online Only</option>
+                  <option value="offline">Offline Only</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Active Filters Display */}
+            {(deviceFilters.search || (deviceFilters.type && deviceFilters.type !== 'all') || (deviceFilters.room && deviceFilters.room !== 'all') || (deviceFilters.status && deviceFilters.status !== 'all')) && (
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap gap-2">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Active filters:</span>
+                    {deviceFilters.search && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
+                        Search: "{deviceFilters.search}"
+                        <button
+                          onClick={() => setDeviceFilters({ ...deviceFilters, search: '' })}
+                          className="ml-1 hover:text-blue-600 dark:hover:text-blue-300"
+                        >
+                          <Icon name="x" size={12} />
+                        </button>
+                      </span>
+                    )}
+                    {deviceFilters.type && deviceFilters.type !== 'all' && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200">
+                        Type: {deviceFilters.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        <button
+                          onClick={() => setDeviceFilters({ ...deviceFilters, type: 'all' })}
+                          className="ml-1 hover:text-green-600 dark:hover:text-green-300"
+                        >
+                          <Icon name="x" size={12} />
+                        </button>
+                      </span>
+                    )}
+                    {deviceFilters.room && deviceFilters.room !== 'all' && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200">
+                        Room: {deviceFilters.room}
+                        <button
+                          onClick={() => setDeviceFilters({ ...deviceFilters, room: 'all' })}
+                          className="ml-1 hover:text-purple-600 dark:hover:text-purple-300"
+                        >
+                          <Icon name="x" size={12} />
+                        </button>
+                      </span>
+                    )}
+                    {deviceFilters.status && deviceFilters.status !== 'all' && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200">
+                        Status: {deviceFilters.status}
+                        <button
+                          onClick={() => setDeviceFilters({ ...deviceFilters, status: 'all' })}
+                          className="ml-1 hover:text-orange-600 dark:hover:text-orange-300"
+                        >
+                          <Icon name="x" size={12} />
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setDeviceFilters({ type: 'all', status: 'all', search: '', room: 'all', controllable: 'all', enabled: 'all' })}
+                    className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Filter Results Summary */}
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Showing {deviceList.length} of {Object.values(devices).filter(device => device.enabled !== false).length} devices
+                {deviceList.length !== Object.values(devices).filter(device => device.enabled !== false).length && (
+                  <span className="ml-1 text-indigo-600 dark:text-indigo-400">
+                    (filtered)
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Device Grid */}
       <div className="mb-4">
-        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4">
-          Device Overview
-        </h2>
-
         <ResponsiveGridLayout
           className="layout"
           layouts={layouts}
@@ -510,6 +702,28 @@ const Dashboard = () => {
             );
           })}
         </ResponsiveGridLayout>
+
+        {/* No Results Message */}
+        {deviceList.length === 0 && totalDevices.length > 0 && (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 mx-auto bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
+              <Icon name="search" size={24} className="text-gray-400" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+              No devices found
+            </h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">
+              No devices match your current filters. Try adjusting your search or filters.
+            </p>
+            <button
+              onClick={() => setDeviceFilters({ type: 'all', status: 'all', search: '', room: 'all', controllable: 'all', enabled: 'all' })}
+              className="btn btn-secondary text-sm"
+            >
+              <Icon name="x" size={16} className="mr-2" />
+              Clear all filters
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ const path = require('path');
 const { Server } = require('socket.io');
 const http = require('http');
 const authRoutes = require('./src/routes/auth');
+const adminRoutes = require('./src/routes/admin');
 const database = require('./src/config/database');
 
 const app = express();
@@ -31,6 +32,9 @@ app.use(express.static('public'));
 
 // Authentication routes
 app.use('/api/auth', authRoutes);
+
+// Admin routes
+app.use('/api/admin', adminRoutes);
 
 // Authentication middleware for protected routes
 const requireAuth = (req, res, next) => {

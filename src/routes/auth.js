@@ -71,7 +71,7 @@ router.post('/login', async (req, res) => {
 
     res.json({
       message: 'Login successful',
-      user: { id: user.id, username: user.username, email: user.email }
+      user: { id: user.id, username: user.username, email: user.email, role: user.role || 'user' }
     });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
@@ -89,15 +89,27 @@ router.post('/logout', (req, res) => {
 });
 
 // Check authentication status
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
   if (req.session.userId) {
-    res.json({
-      authenticated: true,
-      user: {
-        id: req.session.userId,
-        username: req.session.username
+    try {
+      // Get full user data including role from database
+      const user = await database.getUserByUsername(req.session.username);
+      if (user) {
+        res.json({
+          authenticated: true,
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            role: user.role || 'user'
+          }
+        });
+      } else {
+        res.json({ authenticated: false });
       }
-    });
+    } catch (error) {
+      res.status(500).json({ error: 'Internal server error' });
+    }
   } else {
     res.json({ authenticated: false });
   }
@@ -200,6 +212,19 @@ router.get('/user-settings/:key', async (req, res) => {
     const { key } = req.params;
     const value = await database.getUserSetting(req.session.userId, key);
     res.json({ key, value, success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
+// Temporary endpoint to fix superadmin role (for troubleshooting)
+router.post('/fix-superadmin', async (req, res) => {
+  try {
+    const result = await database.makeUserAdmin('superadmin');
+    res.json({ 
+      message: result.isAdmin ? 'Superadmin role updated successfully' : 'User not found',
+      result: result
+    });
   } catch (error) {
     res.status(500).json({ error: 'Internal server error', details: error.message });
   }

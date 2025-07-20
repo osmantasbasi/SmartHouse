@@ -2,18 +2,24 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useDevices } from '../../contexts/DeviceContext';
 import { useMqtt } from '../../contexts/MqttContext';
+import { useAuth } from '../../contexts/AuthContext';
 import Icon from '../ui/Icon';
 
 const Sidebar = ({ isOpen, onClose }) => {
   const location = useLocation();
   const { devices } = useDevices();
   const { connectionStatus } = useMqtt();
+  const { user } = useAuth();
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: 'home' },
     { name: 'Devices', href: '/devices', icon: 'users' },
-    { name: 'Settings', href: '/settings', icon: 'settings' },
   ];
+
+  // Add admin menu item if user is admin
+  if (user?.role === 'admin') {
+    navigation.push({ name: 'Admin Panel', href: '/admin', icon: 'shield-check' });
+  }
 
   const deviceCount = Object.keys(devices).length;
   const onlineDevices = Object.values(devices).filter(device => device.isOnline).length;

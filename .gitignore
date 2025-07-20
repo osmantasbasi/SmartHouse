@@ -140,3 +140,6 @@ debug.log
 # Local configuration files
 config/local.json
 config/production.json
+
+# Admin configuration (local settings)
+src/config/admin.json

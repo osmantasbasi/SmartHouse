@@ -813,7 +813,7 @@ export const DeviceProvider = ({ children }) => {
       }
     }
 
-    if (deviceFilters.room) {
+    if (deviceFilters.room && deviceFilters.room !== 'all') {
       filtered = filtered.filter(device => device.room === deviceFilters.room);
     }
 
