@@ -25,7 +25,7 @@ const Dashboard = () => {
     getDevicesByRoom
   } = useDevices();
   const { connectionStatus, reconnectionStatus } = useMqtt();
-  const { refreshDashboardConfig, saveDashboardConfig } = useAuth();
+  const { refreshDashboardConfig, saveDashboardConfig, user } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -242,13 +242,15 @@ const Dashboard = () => {
               <Icon name="plus" size={20} className="mr-2" />
               Add Device
             </button>
-            <button 
-              className="btn btn-secondary w-full sm:w-auto"
-              onClick={handleAutoDetect}
-            >
-              <Icon name="search" size={20} className="mr-2" />
-              Auto-Detect Devices
-            </button>
+            {user?.role === 'admin' && (
+              <button 
+                className="btn btn-secondary w-full sm:w-auto"
+                onClick={handleAutoDetect}
+              >
+                <Icon name="search" size={20} className="mr-2" />
+                Auto-Detect Devices
+              </button>
+            )}
           </div>
         </div>
       </div>
