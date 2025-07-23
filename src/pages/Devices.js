@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useDevices } from '../contexts/DeviceContext';
 import { useMqtt } from '../contexts/MqttContext';
 import Icon from '../components/ui/Icon';
-import { useAuth } from '../contexts/AuthContext';
 
 const Devices = () => {
   const { 
@@ -20,7 +19,6 @@ const Devices = () => {
     cleanupInvalidDevices
   } = useDevices();
   const { connectionStatus, publishMessage } = useMqtt();
-  const { user } = useAuth();
   
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -249,15 +247,14 @@ const Devices = () => {
             <Icon name="plus" size={18} className="mr-2" />
             Add Device
           </button>
-          {user?.role === 'admin' && (
-            <button
-              onClick={handleAutoDetect}
-              className="btn btn-secondary w-full sm:w-auto"
-            >
-              <Icon name="search" size={18} className="mr-2" />
-              Auto-Detect
-            </button>
-          )}
+          
+          <button
+            onClick={handleAutoDetect}
+            className="btn btn-secondary w-full sm:w-auto"
+          >
+            <Icon name="search" size={18} className="mr-2" />
+            Auto-Detect
+          </button>
         </div>
       </div>
 

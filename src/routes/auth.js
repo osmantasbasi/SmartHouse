@@ -95,15 +95,15 @@ router.get('/me', async (req, res) => {
       // Get full user data including role from database
       const user = await database.getUserByUsername(req.session.username);
       if (user) {
-        res.json({
-          authenticated: true,
-          user: {
+    res.json({
+      authenticated: true,
+      user: {
             id: user.id,
             username: user.username,
             email: user.email,
             role: user.role || 'user'
-          }
-        });
+      }
+    });
       } else {
         res.json({ authenticated: false });
       }

@@ -2,31 +2,9 @@ import React, { useState } from 'react';
 import { useDevices } from '../../contexts/DeviceContext';
 import Icon from '../ui/Icon';
 
-// Simple Switch component (inline, modern)
-const Switch = ({ checked, onChange, disabled }) => (
-  <button
-    type="button"
-    role="switch"
-    aria-checked={checked}
-    onClick={() => !disabled && onChange({ target: { checked: !checked } })}
-    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500
-      ${checked ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-700'} ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
-    disabled={disabled}
-  >
-    <span
-      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
-        ${checked ? 'translate-x-5' : 'translate-x-1'}`}
-    />
-  </button>
-);
-
 const DeviceWidget = ({ device, isEditMode = false }) => {
   const { controlDevice, removeDevice } = useDevices();
   const [showControls, setShowControls] = useState(false);
-  // Timer state for relay
-  const [timerEnabled, setTimerEnabled] = useState(false);
-  const [timerMs, setTimerMs] = useState(1000);
-  const [timerActive, setTimerActive] = useState(false);
   
   // Don't render disabled devices
   if (device.enabled === false) {
@@ -77,61 +55,23 @@ const DeviceWidget = ({ device, isEditMode = false }) => {
     return value.toString();
   };
 
-  const handleControl = (controlKey, value, withTimer = false) => {
+  const handleControl = (controlKey, value) => {
     const controlData = { [controlKey]: value };
     controlDevice(device.id, controlData);
-    // If relay, timer enabled, and toggling ON, schedule OFF
-    if (
-      device.type === 'relay' &&
-      timerEnabled &&
-      withTimer &&
-      value === 'ON'
-    ) {
-      setTimerActive(true);
-      setTimeout(() => {
-        controlDevice(device.id, { [controlKey]: 'OFF' });
-        setTimerActive(false);
-      }, timerMs);
-    }
   };
 
   const renderControls = () => {
     if (!device.controllable || !device.config?.controls) return null;
+
     return (
       <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
-        {/* Relay Timer UI */}
-        {device.type === 'relay' && (
-          <div className="mb-3 flex flex-col gap-2 p-3 rounded bg-gray-50 dark:bg-gray-800">
-            <div className="flex items-center gap-2">
-              <Icon name="clock" size={16} className="text-primary-500" />
-              <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Enable Timer</label>
-              <Switch checked={timerEnabled} onChange={e => setTimerEnabled(e.target.checked)} disabled={timerActive} />
-            </div>
-            {timerEnabled && (
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-600 dark:text-gray-300">Duration (ms):</label>
-                <input
-                  type="number"
-                  min={10}
-                  step={10}
-                  value={timerMs}
-                  onChange={e => setTimerMs(Number(e.target.value))}
-                  className="input w-24 text-xs"
-                  disabled={timerActive}
-                />
-                {timerActive && (
-                  <span className="text-xs text-success-600 dark:text-success-400 flex items-center gap-1"><Icon name="loader-2" size={14} className="animate-spin" />Waiting...</span>
-                )}
-              </div>
-            )}
-          </div>
-        )}
         <div className="space-y-3">
           {Object.entries(device.config.controls).map(([key, control]) => (
             <div key={key} className="flex items-center justify-between space-x-2">
               <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate flex-1">
                 {key}
               </span>
+              
               {control.type === 'toggle' && (
                 <button
                   onClick={() => {
@@ -139,8 +79,7 @@ const DeviceWidget = ({ device, isEditMode = false }) => {
                     const newValue = control.states[0] === currentValue 
                       ? control.states[1] 
                       : control.states[0];
-                    // If relay and timer enabled, pass withTimer
-                    handleControl(key, newValue, device.type === 'relay' && timerEnabled);
+                    handleControl(key, newValue);
                   }}
                   className={`
                     px-3 py-1.5 rounded text-xs font-medium transition-colors flex-shrink-0 touch-manipulation min-h-8
@@ -149,11 +88,11 @@ const DeviceWidget = ({ device, isEditMode = false }) => {
                       : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
                     }
                   `}
-                  disabled={timerActive && device.type === 'relay' && timerEnabled}
                 >
                   {device.data[key] || control.states[1]}
                 </button>
               )}
+              
               {control.type === 'slider' && (
                 <input
                   type="range"
@@ -165,6 +104,7 @@ const DeviceWidget = ({ device, isEditMode = false }) => {
                   className="w-16 sm:w-20 h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 flex-shrink-0 touch-manipulation"
                 />
               )}
+              
               {control.type === 'select' && (
                 <select
                   value={device.data[key] || control.options[0]}
