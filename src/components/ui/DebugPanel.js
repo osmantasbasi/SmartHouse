@@ -105,7 +105,19 @@ const DebugPanel = () => {
           <div className="p-2">
             <h4 className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Messages</h4>
             <div className="space-y-2 text-xs max-h-full overflow-y-auto">
-              {messages.slice(0, 10).map((msg, index) => (
+              {messages.filter(msg => {
+                try {
+                  if (typeof msg.message === 'string') {
+                    JSON.parse(msg.message);
+                    return true;
+                  }
+                  // If already object, consider as JSON
+                  if (typeof msg.message === 'object') return true;
+                  return false;
+                } catch {
+                  return false;
+                }
+              }).slice(0, 10).map((msg, index) => (
                 <div key={index} className="border-b border-gray-100 dark:border-gray-700 pb-1">
                   <div className="font-mono text-gray-600 dark:text-gray-400 break-all">
                     {msg.topic}

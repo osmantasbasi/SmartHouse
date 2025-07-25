@@ -137,6 +137,16 @@ const DeviceWidget = ({ device, isEditMode = false }) => {
     return `${Math.floor(diffMins / 1440)}d ago`;
   };
 
+  // Helper to get WiFi signal icon and color based on RSSI value
+  const getWifiIconAndColor = (rssiRaw) => {
+    const rssi = Number(rssiRaw);
+    if (isNaN(rssi)) return { icon: 'wifi-off', color: 'text-gray-400 dark:text-gray-600' };
+    if (rssi >= -60) return { icon: 'wifi', color: 'text-green-500 dark:text-green-400' };
+    if (rssi >= -75) return { icon: 'wifi', color: 'text-yellow-500 dark:text-yellow-400' };
+    if (rssi >= -90) return { icon: 'wifi', color: 'text-red-500 dark:text-red-400' };
+    return { icon: 'wifi-off', color: 'text-gray-400 dark:text-gray-600' };
+  };
+
   // Get responsive grid columns based on widget size
   const getDataGridClass = () => {
     const dataCount = device.data ? Object.keys(device.data).length : 0;
@@ -187,6 +197,23 @@ const DeviceWidget = ({ device, isEditMode = false }) => {
         </div>
 
         <div className="flex items-center space-x-1 flex-shrink-0">
+          {/* WiFi Signal Icon */}
+          {typeof device.data?.RSSI !== 'undefined' && (
+            (() => {
+              // Debug log for RSSI value and type
+              console.log('DeviceWidget RSSI:', device.data?.RSSI, typeof device.data?.RSSI);
+              const { icon, color } = getWifiIconAndColor(device.data?.RSSI);
+              console.log('DeviceWidget WiFi icon/color:', icon, color);
+              // Always render the Icon if RSSI is defined
+              return (
+                <Icon
+                  name={icon || 'wifi-off'}
+                  size={18}
+                  className={color + ' mr-1'}
+                />
+              );
+            })()
+          )}
           <div className={`
             px-2 py-1 rounded text-xs font-medium
             ${device.isOnline ? 'bg-success-100 text-success-700 dark:bg-success-900 dark:text-success-300' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}
@@ -208,30 +235,32 @@ const DeviceWidget = ({ device, isEditMode = false }) => {
       {device.data && Object.keys(device.data).length > 0 && (
         <div className="flex-1 min-h-0">
           <div className={`grid ${getDataGridClass()} gap-2 h-full`}>
-            {Object.entries(device.data).map(([key, value]) => (
-              <div key={key} className="text-center p-2 bg-gray-50 dark:bg-gray-800 rounded-lg flex flex-col justify-center min-h-0">
-                <div className="flex items-center justify-center space-x-1 mb-1">
-                  <Icon 
-                    name={getStatusIcon(key, value)} 
-                    size={14} 
-                    className={`
-                      flex-shrink-0
-                      ${getStatusColor(key, value) === 'success' && 'text-success-600 dark:text-success-400'}
-                      ${getStatusColor(key, value) === 'warning' && 'text-warning-600 dark:text-warning-400'}
-                      ${getStatusColor(key, value) === 'danger' && 'text-danger-600 dark:text-danger-400'}
-                      ${getStatusColor(key, value) === 'primary' && 'text-primary-600 dark:text-primary-400'}
-                      ${getStatusColor(key, value) === 'gray' && 'text-gray-600 dark:text-gray-400'}
-                    `}
-                  />
-                  <span className="text-xs font-medium text-gray-600 dark:text-gray-300 truncate">
-                    {key}
-                  </span>
+            {Object.entries(device.data)
+              .filter(([key]) => key.trim().toLowerCase() !== 'humudity' && key.trim().toLowerCase() !== 'rssi')
+              .map(([key, value]) => (
+                <div key={key} className="text-center p-2 bg-gray-50 dark:bg-gray-800 rounded-lg flex flex-col justify-center min-h-0">
+                  <div className="flex items-center justify-center space-x-1 mb-1">
+                    <Icon 
+                      name={getStatusIcon(key, value)} 
+                      size={14} 
+                      className={`
+                        flex-shrink-0
+                        ${getStatusColor(key, value) === 'success' && 'text-success-600 dark:text-success-400'}
+                        ${getStatusColor(key, value) === 'warning' && 'text-warning-600 dark:text-warning-400'}
+                        ${getStatusColor(key, value) === 'danger' && 'text-danger-600 dark:text-danger-400'}
+                        ${getStatusColor(key, value) === 'primary' && 'text-primary-600 dark:text-primary-400'}
+                        ${getStatusColor(key, value) === 'gray' && 'text-gray-600 dark:text-gray-400'}
+                      `}
+                    />
+                    <span className="text-xs font-medium text-gray-600 dark:text-gray-300 truncate">
+                      {key}
+                    </span>
+                  </div>
+                  <div className="text-sm font-bold text-gray-900 dark:text-white leading-tight break-words">
+                    {formatValue(key, value)}
+                  </div>
                 </div>
-                <div className="text-sm font-bold text-gray-900 dark:text-white leading-tight break-words">
-                  {formatValue(key, value)}
-                </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
       )}
