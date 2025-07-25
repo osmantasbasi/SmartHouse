@@ -14,6 +14,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: 'home' },
     { name: 'Devices', href: '/devices', icon: 'users' },
+    { name: 'Config', href: '/config', icon: 'settings' },
   ];
 
   // Add admin menu item if user is admin

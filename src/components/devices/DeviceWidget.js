@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useDevices } from '../../contexts/DeviceContext';
 import Icon from '../ui/Icon';
 
 const DeviceWidget = ({ device, isEditMode = false }) => {
   const { controlDevice, removeDevice } = useDevices();
   const [showControls, setShowControls] = useState(false);
+  // Timer state
+  const [timerEnabled, setTimerEnabled] = useState(false);
+  const [timerMs, setTimerMs] = useState(1000);
+  const [countdown, setCountdown] = useState(null); // ms left
+  const timerRef = useRef(null);
   
   // Don't render disabled devices
   if (device.enabled === false) {
@@ -60,11 +65,81 @@ const DeviceWidget = ({ device, isEditMode = false }) => {
     controlDevice(device.id, controlData);
   };
 
+  // Timer handler for toggle controls
+  const handleToggleWithTimer = (controlKey, control, currentValue) => {
+    if (!timerEnabled) {
+      // Normal instant control
+      const newValue = control.states[0] === currentValue 
+        ? control.states[1] 
+        : control.states[0];
+      handleControl(controlKey, newValue);
+      return;
+    }
+    // If timer is enabled, start countdown and schedule control
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setCountdown(timerMs);
+    const start = Date.now();
+    timerRef.current = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const left = Math.max(timerMs - elapsed, 0);
+      setCountdown(left);
+      if (left <= 0) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+        setCountdown(null);
+        // Toggle after timer
+        const newValue = control.states[0] === currentValue 
+          ? control.states[1] 
+          : control.states[0];
+        handleControl(controlKey, newValue);
+      }
+    }, 100);
+  };
+
   const renderControls = () => {
     if (!device.controllable || !device.config?.controls) return null;
 
     return (
       <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+        {/* Timer Toggle UI */}
+        <div className="flex items-center mb-2">
+          <label className="flex items-center cursor-pointer text-xs font-medium text-gray-700 dark:text-gray-300">
+            <span className="mr-2">Enable Timer</span>
+            <span className="relative inline-block w-10 align-middle select-none transition duration-200 ease-in">
+              <input
+                type="checkbox"
+                checked={timerEnabled}
+                onChange={e => setTimerEnabled(e.target.checked)}
+                className="absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400"
+                style={{ left: timerEnabled ? '1.5rem' : '0', transition: 'left 0.2s' }}
+              />
+              <span
+                className={`block overflow-hidden h-6 rounded-full bg-gray-300 dark:bg-gray-600 cursor-pointer transition-colors duration-200 ${timerEnabled ? 'bg-blue-500' : ''}`}
+              ></span>
+            </span>
+          </label>
+          {timerEnabled && (
+            <div className="flex items-center ml-4">
+              <input
+                type="number"
+                min={100}
+                step={100}
+                value={timerMs}
+                onChange={e => setTimerMs(Number(e.target.value))}
+                className="px-2 py-1 w-28 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                placeholder="ms"
+              />
+              <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">ms</span>
+            </div>
+          )}
+          {countdown !== null && (
+            <span className="ml-4 text-xs text-blue-600 dark:text-blue-300">{Math.ceil(countdown / 1000 * 10) / 10}s</span>
+          )}
+        </div>
+        {/* End Timer Toggle UI */}
         <div className="space-y-3">
           {Object.entries(device.config.controls).map(([key, control]) => (
             <div key={key} className="flex items-center justify-between space-x-2">
@@ -74,20 +149,15 @@ const DeviceWidget = ({ device, isEditMode = false }) => {
               
               {control.type === 'toggle' && (
                 <button
-                  onClick={() => {
-                    const currentValue = device.data[key];
-                    const newValue = control.states[0] === currentValue 
-                      ? control.states[1] 
-                      : control.states[0];
-                    handleControl(key, newValue);
-                  }}
-                  className={`
-                    px-3 py-1.5 rounded text-xs font-medium transition-colors flex-shrink-0 touch-manipulation min-h-8
+                  onClick={() => handleToggleWithTimer(key, control, device.data[key])}
+                  className={
+                    `px-3 py-1.5 rounded text-xs font-medium transition-colors flex-shrink-0 touch-manipulation min-h-8
                     ${getStatusColor(key, device.data[key]) === 'success' 
                       ? 'bg-success-100 text-success-800 dark:bg-success-900 dark:text-success-200' 
                       : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                    }
-                  `}
+                    }`
+                  }
+                  disabled={countdown !== null}
                 >
                   {device.data[key] || control.states[1]}
                 </button>

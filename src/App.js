@@ -12,6 +12,7 @@ import Login from './components/auth/Login';
 import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
 import Admin from './pages/Admin';
+import Config from './pages/Config';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -87,6 +88,7 @@ const AppContent = () => {
                       <Route path="/dashboard" element={<Dashboard />} />
                       <Route path="/devices" element={<Devices />} />
                       <Route path="/admin" element={<Admin />} />
+                      <Route path="/config" element={<Config />} />
                     </Routes>
                   </div>
                 </div>
