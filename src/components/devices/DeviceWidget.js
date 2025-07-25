@@ -75,11 +75,16 @@ const DeviceWidget = ({ device, isEditMode = false }) => {
       handleControl(controlKey, newValue);
       return;
     }
-    // If timer is enabled, start countdown and schedule control
+    // If timer is enabled, immediately change state and start timer
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    // 1. Immediately change state
+    const firstValue = control.states[0] === currentValue 
+      ? control.states[1] 
+      : control.states[0];
+    handleControl(controlKey, firstValue);
     setCountdown(timerMs);
     const start = Date.now();
     timerRef.current = setInterval(() => {
@@ -90,11 +95,11 @@ const DeviceWidget = ({ device, isEditMode = false }) => {
         clearInterval(timerRef.current);
         timerRef.current = null;
         setCountdown(null);
-        // Toggle after timer
-        const newValue = control.states[0] === currentValue 
+        // 2. After timer, switch to opposite state
+        const oppositeValue = control.states[0] === firstValue 
           ? control.states[1] 
           : control.states[0];
-        handleControl(controlKey, newValue);
+        handleControl(controlKey, oppositeValue);
       }
     }, 100);
   };
