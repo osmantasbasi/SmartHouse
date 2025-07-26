@@ -80,7 +80,7 @@ export const MqttProvider = ({ children }) => {
       
       // Show browser notification if supported
       if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('MQTT Bağlantı Hatası', {
+        new Notification('MQTT Connection Error', {
           body: data.message,
           icon: '/favicon.ico'
         });

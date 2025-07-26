@@ -176,7 +176,7 @@ const setupMqttEventHandlers = () => {
   });
 
   mqttClient.on('error', (error) => {
-    console.error('MQTT bağlantı hatası:', error.message);
+          console.error('MQTT connection error:', error.message);
     connectionStatus = {
       ...connectionStatus,
       connected: false,
@@ -318,7 +318,7 @@ app.post('/api/upload-certificate', requireAuth, upload.single('certificate'), (
     
     res.json({ 
       success: true, 
-      message: 'Sertifika başarıyla yüklendi',
+              message: 'Certificate uploaded successfully',
       filename: req.file.filename,
       path: req.file.path
     });
@@ -377,7 +377,7 @@ app.post('/api/upload-aws-certificate', requireAuth, awsUpload.single('awsCertif
     
     res.json({ 
       success: true, 
-      message: `AWS ${certType} sertifikası başarıyla yüklendi`,
+              message: `AWS ${certType} certificate uploaded successfully`,
       filename: req.file.filename,
       path: req.file.path,
       certType: certType
@@ -465,7 +465,7 @@ app.post('/api/connect', requireAuth, async (req, res) => {
           return res.status(400).json({ error: 'AWS sertifikaları eksik (ca-cert.pem, client-cert.pem, client-key.pem gerekli)' });
         }
       } catch (error) {
-        return res.status(500).json({ error: `AWS sertifika okuma hatası: ${error.message}` });
+        return res.status(500).json({ error: `AWS certificate reading error: ${error.message}` });
       }
     }
     // Standard certificate handling
@@ -497,7 +497,7 @@ app.post('/api/connect', requireAuth, async (req, res) => {
     mqttClient.once('connect', () => {
       clearTimeout(connectionTimeout);
       if (!res.headersSent) {
-        res.json({ success: true, message: 'Broker\'a başarıyla bağlandı' });
+        res.json({ success: true, message: 'Successfully connected to broker' });
       }
     });
 
@@ -505,7 +505,7 @@ app.post('/api/connect', requireAuth, async (req, res) => {
     mqttClient.once('error', (error) => {
       clearTimeout(connectionTimeout);
       if (!res.headersSent) {
-        res.status(500).json({ error: `Bağlantı hatası: ${error.message}` });
+        res.status(500).json({ error: `Connection error: ${error.message}` });
       }
     });
 
@@ -534,7 +534,7 @@ app.post('/api/disconnect', requireAuth, (req, res) => {
     
     connectionStatus.connected = false;
     io.emit('connectionStatus', connectionStatus);
-    res.json({ success: true, message: 'Bağlantı kesildi' });
+          res.json({ success: true, message: 'Connection disconnected' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -559,9 +559,9 @@ app.post('/api/subscribe', requireAuth, (req, res) => {
 
     mqttClient.subscribe(topic, subscribeOptions, (error) => {
       if (error) {
-        res.status(500).json({ error: `Abone olma hatası: ${error.message}` });
+        res.status(500).json({ error: `Subscription error: ${error.message}` });
       } else {
-        res.json({ success: true, message: `${topic} topic'ine QoS ${subscribeOptions.qos} ile abone olundu` });
+                  res.json({ success: true, message: `Subscribed to ${topic} topic with QoS ${subscribeOptions.qos}` });
       }
     });
   } catch (error) {
@@ -589,11 +589,11 @@ app.post('/api/publish', requireAuth, (req, res) => {
 
     mqttClient.publish(topic, message, publishOptions, (error) => {
       if (error) {
-        res.status(500).json({ error: `Mesaj gönderme hatası: ${error.message}` });
+        res.status(500).json({ error: `Message sending error: ${error.message}` });
       } else {
         res.json({ 
           success: true, 
-          message: `Mesaj başarıyla gönderildi (QoS: ${publishOptions.qos}, Retain: ${publishOptions.retain})` 
+                      message: `Message sent successfully (QoS: ${publishOptions.qos}, Retain: ${publishOptions.retain})` 
         });
       }
     });

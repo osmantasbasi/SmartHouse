@@ -22,29 +22,29 @@ const Config = () => {
     // If MAC address changed, clear all devices to re-filter
     if (previousMac !== mac) {
       clearAllDevices();
-      showSuccess('MAC adresi değiştirildi. Tüm cihazlar temizlendi. Yeni MAC ID ile auto-detect yapabilirsiniz.');
+      showSuccess('MAC address changed. All devices cleared. You can auto-detect with new MAC ID.');
     } else {
-      showSuccess('MAC adresi başarıyla kaydedildi!');
+      showSuccess('MAC address saved successfully!');
     }
   };
 
   return (
     <div className="max-w-md mx-auto mt-10 p-6 bg-white dark:bg-gray-800 rounded shadow">
-      <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">MAC Adresi Ayarları</h2>
+      <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">MAC Address Settings</h2>
       <form onSubmit={handleSave}>
-        <label className="block mb-2 text-gray-700 dark:text-gray-300">MAC Adresi</label>
+                  <label className="block mb-2 text-gray-700 dark:text-gray-300">MAC Address</label>
         <input
           type="text"
           value={mac}
           onChange={e => setMac(e.target.value)}
           className="w-full px-3 py-2 border rounded mb-4 focus:outline-none focus:ring focus:border-blue-300 dark:bg-gray-700 dark:text-white"
-          placeholder="Örn: AA:BB:CC:DD:EE:FF"
+          placeholder="e.g. AA:BB:CC:DD:EE:FF"
         />
         <button
           type="submit"
           className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition"
         >
-          Kaydet
+          Save
         </button>
       </form>
     </div>

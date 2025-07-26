@@ -88,9 +88,9 @@ const Devices = () => {
         room: 'Living Room'
       });
       setShowAddModal(false);
-      showSuccess('Cihaz başarıyla eklendi.');
+              showSuccess('Device added successfully.');
     } else {
-      showWarning('Cihaz adı veya MQTT konusu boş bırakılamaz.');
+      showWarning('Device name or MQTT topic cannot be empty.');
     }
   };
 
@@ -120,9 +120,9 @@ const Devices = () => {
       
       setEditDevice(null);
       setShowEditModal(false);
-      showSuccess('Cihaz başarıyla güncellendi.');
+      showSuccess('Device updated successfully.');
     } else {
-      showWarning('Cihaz adı veya MQTT konusu boş bırakılamaz.');
+      showWarning('Device name or MQTT topic cannot be empty.');
     }
   };
 
@@ -135,13 +135,13 @@ const Devices = () => {
         for (let i = 0; i < detectedDevices.length; i++) {
           await addDevice(detectedDevices[i]);
         }
-        showSuccess(`${detectedDevices.length} cihaz başarıyla eklendi.`);
+        showSuccess(`${detectedDevices.length} devices added successfully.`);
       }
     } else {
       // Regular users can only add devices matching their MAC ID
       const userMacId = getUserSetting('mac_address', '');
       if (!userMacId || userMacId.trim() === '') {
-        showError('MAC adresi boş! Lütfen önce Config sayfasından MAC adresinizi girin.');
+        showError('MAC address is empty! Please enter your MAC address in the Config page first.');
         return;
       }
       
@@ -249,17 +249,17 @@ const Devices = () => {
       }
       
       if (addedCount > 0) {
-        showSuccess(`${addedCount} cihaz başarıyla eklendi.`);
+        showSuccess(`${addedCount} devices added successfully.`);
       } else if (existingMatchingDevices.length > 0) {
-        showInfo(`${existingMatchingDevices.length} cihaz zaten mevcut. Yeni cihaz tespit edilmedi.`);
+        showInfo(`${existingMatchingDevices.length} devices already exist. No new devices detected.`);
       } else {
-        showWarning(`MAC adresinizle eşleşen cihaz bulunamadı. (Aranan: ${userMacIdClean})`);
+        showWarning(`No devices found matching your MAC address. (Searched: ${userMacIdClean})`);
       }
     }
   };
 
   const handleRemoveDevice = async (deviceId) => {
-    if (window.confirm('Bu cihazı kaldırmak istediğinizden emin misiniz?')) {
+          if (window.confirm('Are you sure you want to remove this device?')) {
       // Immediate remove without delay for better UX
       await removeDevice(deviceId);
       setSelectedDevices(prev => {
@@ -267,7 +267,7 @@ const Devices = () => {
         newSet.delete(deviceId);
         return newSet;
       });
-      showSuccess('Cihaz başarıyla kaldırıldı.');
+      showSuccess('Device removed successfully.');
     }
   };
 
@@ -293,11 +293,11 @@ const Devices = () => {
 
   const handleBulkAction = async (action) => {
     if (action === 'remove' && selectedDevices.size > 0) {
-      if (window.confirm(`${selectedDevices.size} seçili cihazı kaldırmak istediğinizden emin misiniz?`)) {
+      if (window.confirm(`Are you sure you want to remove ${selectedDevices.size} selected devices?`)) {
         // Immediate bulk remove without delay for better UX
         await Promise.all(Array.from(selectedDevices).map(deviceId => removeDevice(deviceId)));
         setSelectedDevices(new Set());
-        showSuccess(`${selectedDevices.size} cihaz başarıyla kaldırıldı.`);
+        showSuccess(`${selectedDevices.size} devices removed successfully.`);
       }
     }
   };
@@ -320,14 +320,14 @@ const Devices = () => {
 
   const handleCleanupInvalidDevices = () => {
     cleanupInvalidDevices();
-    showInfo('Geçersiz cihazlar temizlendi.');
+    showInfo('Invalid devices cleaned up.');
   };
 
 
 
   const handleSendTestMessage = () => {
     if (!connectionStatus.connected) {
-      showError('MQTT bağlantısı yok! Lütfen önce MQTT broker\'a bağlanın.');
+      showError('No MQTT connection! Please connect to MQTT broker first.');
       return;
     }
     
@@ -350,14 +350,14 @@ const Devices = () => {
       publishMessage(test.topic, test.payload, 0);
     });
 
-    showInfo(`${testTopics.length} test mesajı gönderildi. Birkaç saniye sonra auto-detect\'i kontrol edin!`);
+    showInfo(`${testTopics.length} test messages sent. Check auto-detect in a few seconds!`);
   };
 
   const handleClearAllDevices = () => {
-    if (window.confirm('Tüm cihazları silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.')) {
+    if (window.confirm('Are you sure you want to delete all devices? This action cannot be undone.')) {
       clearAllDevices();
       setSelectedDevices(new Set());
-      showSuccess('Tüm cihazlar sistemden ve depolamadan temizlendi.');
+      showSuccess('All devices cleared from system and storage.');
     }
   };
 
