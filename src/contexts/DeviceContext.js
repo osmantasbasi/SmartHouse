@@ -30,11 +30,67 @@ export const DeviceProvider = ({ children }) => {
   });
   const [lastSyncTime, setLastSyncTime] = useState(null);
 
-  // Get sensor timeout from user settings
-  const getSensorTimeout = useCallback(() => {
-    const timeoutValue = getUserSetting('sensorTimeout', '60');
-    return (parseInt(timeoutValue) || 60) * 1000; // Convert to milliseconds
-  }, [getUserSetting]);
+  // Get current devices state (for external access)
+  const getCurrentDevices = useCallback(() => {
+    return devices;
+  }, [devices]);
+
+  // Cache for sensor timeout value
+  const [sensorTimeoutCache, setSensorTimeoutCache] = useState(60 * 1000); // Default 60 seconds
+  const [lastTimeoutFetch, setLastTimeoutFetch] = useState(0);
+  const TIMEOUT_CACHE_DURATION = 5 * 60 * 1000; // Cache for 5 minutes
+
+  // Get sensor timeout from admin settings with caching
+  const getSensorTimeout = useCallback(async () => {
+    const now = Date.now();
+    
+    // Return cached value if it's still valid
+    if (now - lastTimeoutFetch < TIMEOUT_CACHE_DURATION) {
+      return sensorTimeoutCache;
+    }
+
+    try {
+      const response = await fetch('/api/admin/settings', {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const timeoutSetting = data.settings.find(setting => setting.setting_key === 'global_sensor_timeout');
+        const timeoutValue = timeoutSetting ? timeoutSetting.setting_value : '60';
+        const newTimeout = (parseInt(timeoutValue) || 60) * 1000; // Convert to milliseconds
+        
+        // Update cache
+        setSensorTimeoutCache(newTimeout);
+        setLastTimeoutFetch(now);
+        
+        return newTimeout;
+      }
+    } catch (error) {
+      // Fallback to cached value if admin settings can't be loaded
+    }
+    return sensorTimeoutCache; // Return cached value as fallback
+  }, [sensorTimeoutCache, lastTimeoutFetch]);
+
+  // Force refresh timeout cache (useful when admin settings are updated)
+  const refreshSensorTimeout = useCallback(async () => {
+    setLastTimeoutFetch(0); // Invalidate cache
+    return await getSensorTimeout();
+  }, [getSensorTimeout]);
+
+  // Load initial sensor timeout value and set up periodic refresh
+  useEffect(() => {
+    if (isAuthenticated) {
+      getSensorTimeout();
+      
+      // Refresh timeout cache every 5 minutes
+      const timeoutRefreshInterval = setInterval(() => {
+        getSensorTimeout();
+      }, TIMEOUT_CACHE_DURATION);
+
+      return () => clearInterval(timeoutRefreshInterval);
+    }
+  }, [isAuthenticated, getSensorTimeout]);
 
   // Periodic sync to ensure dashboard config is up to date
   useEffect(() => {
@@ -431,9 +487,6 @@ export const DeviceProvider = ({ children }) => {
           }
         }));
         
-        // Get current sensor timeout setting
-        const timeoutMs = getSensorTimeout();
-        
         // Set a timer to mark device as offline after the configured timeout
         const offlineTimer = setTimeout(() => {
           setDevices(prev => ({
@@ -448,7 +501,7 @@ export const DeviceProvider = ({ children }) => {
             delete newTimers[deviceId];
             return newTimers;
           });
-        }, timeoutMs);
+        }, sensorTimeoutCache);
         
         setDeviceOfflineTimers(prev => ({
           ...prev,
@@ -459,7 +512,7 @@ export const DeviceProvider = ({ children }) => {
       }
     } else {
     }
-  }, [messages, devices, getSensorTimeout]);
+  }, [messages, devices, sensorTimeoutCache]);
 
   const addDevice = useCallback(async (deviceData) => {
     const deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -871,6 +924,10 @@ export const DeviceProvider = ({ children }) => {
     clearAllDevices,
     clearDeletedTopics,
     cleanupInvalidDevices,
+    getCurrentDevices,
+    getSensorTimeout,
+    refreshSensorTimeout,
+    sensorTimeoutCache,
   };
 
   return (

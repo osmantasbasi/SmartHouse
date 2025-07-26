@@ -23,8 +23,51 @@ const requireAdmin = async (req, res, next) => {
 router.get('/users', requireAdmin, async (req, res) => {
   try {
     const users = await database.getAllUsers();
-    res.json({ users, success: true });
+    
+    // Get device counts for each user
+    const usersWithDeviceCounts = await Promise.all(users.map(async (user) => {
+      let deviceCount = 0;
+      
+      if (user.role === 'admin') {
+        // Admin users see all devices - get total device count from dashboard config
+        const dashboardConfig = await database.getDashboardConfig(user.id);
+        if (dashboardConfig && dashboardConfig.devices) {
+          deviceCount = Object.keys(dashboardConfig.devices).length;
+        }
+      } else {
+        // Regular users - get their MAC address and count matching devices
+        const userMacId = await database.getUserSetting(user.id, 'mac_address', '');
+        if (userMacId && userMacId.trim() !== '') {
+          const userMacIdClean = userMacId.replace(/:/g, '').toLowerCase();
+          
+          // Get this user's own dashboard config to find their devices
+          const userConfig = await database.getDashboardConfig(user.id);
+          if (userConfig && userConfig.devices) {
+            const userDevices = Object.values(userConfig.devices).filter(device => {
+              if (!device || !device.topic) return false;
+              
+              const topicParts = device.topic.split('/');
+              if (topicParts.length >= 1) {
+                const topicUserMac = topicParts[0].toLowerCase();
+                return topicUserMac === userMacIdClean;
+              }
+              return false;
+            });
+            
+            deviceCount = userDevices.length;
+          }
+        }
+      }
+      
+      return {
+        ...user,
+        deviceCount
+      };
+    }));
+    
+    res.json({ users: usersWithDeviceCounts, success: true });
   } catch (error) {
+    console.error('Error loading users with device counts:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

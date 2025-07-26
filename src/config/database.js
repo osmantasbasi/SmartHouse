@@ -127,7 +127,6 @@ class Database {
       },
       systemSettings: {
         maxUsers: 100,
-        globalSensorTimeout: 60,
         systemName: 'Smart Home Dashboard',
         enableRegistration: true,
         defaultUserRole: 'user'
@@ -178,7 +177,7 @@ class Database {
                 if (!updateErr) {
                   // Add default admin settings from config
                   const systemSettings = adminConfig.systemSettings;
-                  this.setAdminSetting('global_sensor_timeout', systemSettings.globalSensorTimeout.toString(), 'number', 'Global timeout for sensor offline detection');
+                  this.setAdminSetting('global_sensor_timeout', '60', 'number', 'Global timeout for sensor offline detection (1-3600 seconds)');
                   this.setAdminSetting('max_users', systemSettings.maxUsers.toString(), 'number', 'Maximum number of users allowed');
                   this.setAdminSetting('system_name', systemSettings.systemName, 'string', 'System display name');
                   this.setAdminSetting('enable_registration', systemSettings.enableRegistration.toString(), 'boolean', 'Allow new user registration');

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useMqtt } from '../contexts/MqttContext';
+import { useDevices } from '../contexts/DeviceContext';
 import Icon from '../components/ui/Icon';
 
 const Admin = () => {
-  const { user } = useAuth();
+  const { user, getUserSetting } = useAuth();
   const { connectionStatus, connectToMqtt, disconnectFromMqtt } = useMqtt();
+  const { devices, refreshSensorTimeout } = useDevices();
   const [activeTab, setActiveTab] = useState('users');
   const [users, setUsers] = useState([]);
   const [adminSettings, setAdminSettings] = useState([]);
@@ -27,6 +29,39 @@ const Admin = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [sensorTimeout, setSensorTimeout] = useState('60');
+
+  // Calculate device count for each user
+  const getUserDeviceCount = (userData) => {
+    // Use deviceCount from backend API response
+    return userData.deviceCount || 0;
+  };
+
+  // Calculate online device count for each user using current devices state
+  const getUserOnlineDeviceCount = (userData) => {
+    if (userData.role === 'admin') {
+      // Admin users see all devices
+      return Object.values(devices).filter(device => device.isOnline).length;
+    } else {
+      // Regular users - get their MAC address and count matching online devices
+      const userMacId = getUserSetting('mac_address', '');
+      if (!userMacId || userMacId.trim() === '') {
+        return 0;
+      }
+      
+      const userMacIdClean = userMacId.replace(/:/g, '').toLowerCase();
+      return Object.values(devices).filter(device => {
+        if (!device || !device.topic || !device.isOnline) return false;
+        
+        const topicParts = device.topic.split('/');
+        if (topicParts.length >= 1) {
+          const topicUserMac = topicParts[0].toLowerCase();
+          return topicUserMac === userMacIdClean;
+        }
+        return false;
+      }).length;
+    }
+  };
 
   // Load users
   const loadUsers = async () => {
@@ -57,6 +92,12 @@ const Admin = () => {
       if (response.ok) {
         const data = await response.json();
         setAdminSettings(data.settings);
+        
+        // Update sensor timeout from admin settings
+        const timeoutSetting = data.settings.find(s => s.setting_key === 'global_sensor_timeout');
+        if (timeoutSetting) {
+          setSensorTimeout(timeoutSetting.setting_value);
+        }
       } else {
         const errorData = await response.json();
         setMessage(errorData.error || 'Error loading admin settings');
@@ -305,6 +346,14 @@ const Admin = () => {
 
       if (response.ok) {
         setMessage('Setting updated successfully');
+        
+        // Update local state for sensor timeout
+        if (key === 'global_sensor_timeout') {
+          setSensorTimeout(value);
+          // Refresh DeviceContext cache
+          await refreshSensorTimeout();
+        }
+        
         await loadAdminSettings();
       } else {
         const data = await response.json();
@@ -481,6 +530,9 @@ const Admin = () => {
                         Role
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Devices (Online/Total)
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Created
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -511,6 +563,17 @@ const Admin = () => {
                             <option value="user">User</option>
                             <option value="admin">Admin</option>
                           </select>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <Icon name="smartphone" size={16} className="text-gray-400 mr-2" />
+                            <span className="text-sm font-medium text-gray-900 dark:text-white">
+                              {getUserOnlineDeviceCount(userData)}/{getUserDeviceCount(userData)}
+                            </span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+                              devices
+                            </span>
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                           {new Date(userData.created_at).toLocaleDateString()}
@@ -772,29 +835,7 @@ const Admin = () => {
                         />
                       </div>
                       
-                      <div>
-                        <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-                          Global Sensor Timeout (seconds)
-                        </label>
-                        <input
-                          type="number"
-                          min="10"
-                          max="300"
-                          value={adminConfig.systemSettings.globalSensorTimeout}
-                          onChange={(e) => {
-                            const newConfig = {
-                              ...adminConfig,
-                              systemSettings: {
-                                ...adminConfig.systemSettings,
-                                globalSensorTimeout: parseInt(e.target.value)
-                              }
-                            };
-                            setAdminConfig(newConfig);
-                          }}
-                          onBlur={() => updateAdminConfig(adminConfig)}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                        />
-                      </div>
+
                       
                       <div className="flex items-center justify-between">
                         <label className="text-sm text-gray-600 dark:text-gray-400">
@@ -916,14 +957,24 @@ const Admin = () => {
                       </label>
                       <input
                         type="number"
-                        min="10"
-                        max="300"
-                        defaultValue="60"
-                        onBlur={(e) => updateAdminSetting('global_sensor_timeout', e.target.value, 'number', 'Global timeout for sensor offline detection')}
+                        min="1"
+                        max="3600"
+                        value={sensorTimeout}
+                        onChange={(e) => {
+                          let value = parseInt(e.target.value) || 60;
+                          // Enforce min/max limits
+                          if (value < 1) value = 1;
+                          if (value > 3600) value = 3600;
+                          setSensorTimeout(value.toString());
+                        }}
+                        onBlur={(e) => {
+                          const value = parseInt(e.target.value) || 60;
+                          updateAdminSetting('global_sensor_timeout', value.toString(), 'number', 'Global timeout for sensor offline detection (1-3600 seconds)');
+                        }}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                       />
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Time in seconds before marking sensors as offline
+                        Time in seconds before marking sensors as offline (Min: 1s, Max: 3600s)
                       </p>
                     </div>
                   </div>
@@ -944,57 +995,59 @@ const Admin = () => {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Broker Address
-                    </label>
-                    <input
-                      type="text"
-                      value={connectionSettings.brokerAddress}
-                      onChange={(e) => setConnectionSettings(prev => ({ ...prev, brokerAddress: e.target.value }))}
-                      placeholder="broker.example.com"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                    />
-                  </div>
+                <form onSubmit={(e) => e.preventDefault()}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Broker Address
+                      </label>
+                      <input
+                        type="text"
+                        value={connectionSettings.brokerAddress}
+                        onChange={(e) => setConnectionSettings(prev => ({ ...prev, brokerAddress: e.target.value }))}
+                        placeholder="broker.example.com"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Port
-                    </label>
-                    <input
-                      type="number"
-                      value={connectionSettings.port}
-                      onChange={(e) => setConnectionSettings(prev => ({ ...prev, port: parseInt(e.target.value) || 1883 }))}
-                      placeholder="1883"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Port
+                      </label>
+                      <input
+                        type="number"
+                        value={connectionSettings.port}
+                        onChange={(e) => setConnectionSettings(prev => ({ ...prev, port: parseInt(e.target.value) || 1883 }))}
+                        placeholder="1883"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Username (optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={connectionSettings.username}
-                      onChange={(e) => setConnectionSettings(prev => ({ ...prev, username: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Username (optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={connectionSettings.username}
+                        onChange={(e) => setConnectionSettings(prev => ({ ...prev, username: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Password (optional)
-                    </label>
-                    <input
-                      type="password"
-                      value={connectionSettings.password}
-                      onChange={(e) => setConnectionSettings(prev => ({ ...prev, password: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                    />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Password (optional)
+                      </label>
+                      <input
+                        type="password"
+                        value={connectionSettings.password}
+                        onChange={(e) => setConnectionSettings(prev => ({ ...prev, password: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                      />
+                    </div>
                   </div>
-                </div>
+                </form>
 
                 {showAdvanced && (
                   <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
