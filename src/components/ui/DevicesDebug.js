@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useDevices } from '../../contexts/DeviceContext';
+import { useNotification } from '../../contexts/NotificationContext';
 import Icon from './Icon';
 
 const DevicesDebug = () => {
   const [isOpen, setIsOpen] = useState(false);
   const { devices, deviceFilters, getFilteredDevices, clearAllDevices, cleanupInvalidDevices } = useDevices();
+  const { showInfo } = useNotification();
 
   const rawDevices = Object.values(devices);
   const filteredDevices = getFilteredDevices();
@@ -31,9 +33,9 @@ const DevicesDebug = () => {
     }
   };
 
-  const handleCleanupInvalid = () => {
+  const handleCleanup = () => {
     const count = cleanupInvalidDevices();
-    alert(`Cleaned up ${count} invalid devices.`);
+    showInfo(`${count} geçersiz cihaz temizlendi.`);
   };
 
   const localStorageData = getLocalStorageData();
@@ -71,7 +73,7 @@ const DevicesDebug = () => {
             </h4>
             <div className="space-y-2">
               <button
-                onClick={handleCleanupInvalid}
+                onClick={handleCleanup}
                 className="w-full text-xs bg-yellow-500 hover:bg-yellow-600 text-white py-1 px-2 rounded"
               >
                 Clean Invalid Devices

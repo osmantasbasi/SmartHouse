@@ -4,6 +4,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { MqttProvider } from './contexts/MqttContext';
 import { DeviceProvider } from './contexts/DeviceContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 import Navbar from './components/layout/Navbar';
 import Sidebar from './components/layout/Sidebar';
 import DebugPanel from './components/ui/DebugPanel';
@@ -107,9 +108,11 @@ const AppContent = () => {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <AppContent />
-      </Router>
+      <NotificationProvider>
+        <Router>
+          <AppContent />
+        </Router>
+      </NotificationProvider>
     </AuthProvider>
   );
 }

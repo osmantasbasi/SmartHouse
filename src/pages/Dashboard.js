@@ -25,16 +25,43 @@ const Dashboard = () => {
     getDevicesByRoom
   } = useDevices();
   const { connectionStatus, reconnectionStatus } = useMqtt();
-  const { refreshDashboardConfig, saveDashboardConfig } = useAuth();
-  const [isSyncing, setIsSyncing] = useState(false);
+  const { refreshDashboardConfig, saveDashboardConfig, user, getUserSetting } = useAuth();
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
-  // Use filtered devices instead of all enabled devices
-  const filteredDevices = getFilteredDevices().filter(device => device.enabled !== false);
-  const deviceList = filteredDevices; // Use filtered devices for dashboard
+  // Filter devices based on user's MAC ID (except for admin users)
+  const getFilteredDevicesForUser = () => {
+    const allFilteredDevices = getFilteredDevices().filter(device => device.enabled !== false);
+    
+    if (user?.role === 'admin') {
+      // Admin users see all devices
+      return allFilteredDevices;
+    } else {
+      // Regular users only see devices matching their MAC ID
+      const userMacId = getUserSetting('mac_address', '');
+      if (!userMacId || userMacId.trim() === '') {
+        return []; // No MAC ID set, show no devices
+      }
+      
+      const userMacIdClean = userMacId.replace(/:/g, '').toLowerCase();
+      return allFilteredDevices.filter(device => {
+        if (!device || !device.topic) return false;
+        
+        const topicParts = device.topic.split('/');
+        if (topicParts.length >= 1) {
+          const topicUserMac = topicParts[0].toLowerCase();
+          return topicUserMac === userMacIdClean;
+        }
+        return false;
+      });
+    }
+  };
+
+  // Use filtered devices for current user
+  const filteredDevices = getFilteredDevicesForUser();
+  const deviceList = filteredDevices;
   const onlineDevices = deviceList.filter(device => device.isOnline);
   const offlineDevices = deviceList.filter(device => !device.isOnline);
 
@@ -159,18 +186,6 @@ const Dashboard = () => {
   const handleToggleEditMode = () => {
     setIsEditMode(!isEditMode);
     setSaveMessage('');
-  };
-
-  const handleSync = async () => {
-    setIsSyncing(true);
-    try {
-      await refreshDashboardConfig();
-      await cleanupInvalidDevices();
-    } catch (error) {
-      // Removed console.error for production
-    } finally {
-      setIsSyncing(false);
-    }
   };
 
   const getQuickStats = () => {
@@ -319,21 +334,6 @@ const Dashboard = () => {
           </button>
 
 
-
-          <button
-            onClick={handleSync}
-            disabled={isSyncing}
-            className="btn btn-secondary w-full sm:w-auto"
-            title="Sync dashboard with other devices"
-          >
-            <Icon 
-              name={isSyncing ? 'loader-2' : 'refresh-cw'} 
-              size={20} 
-              className={`mr-2 ${isSyncing ? 'animate-spin' : ''}`} 
-            />
-            {isSyncing ? 'Syncing...' : 'Sync'}
-          </button>
-          
 
         </div>
       </div>

@@ -56,11 +56,6 @@ const Navbar = ({ onMenuClick }) => {
             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
               {connectionStatus.connected ? 'Connected' : 'Disconnected'}
             </span>
-            {connectionStatus.connected && (
-              <span className="hidden lg:inline text-xs text-gray-500 dark:text-gray-400">
-                {connectionStatus.brokerAddress}:{connectionStatus.port}
-              </span>
-            )}
           </div>
 
           {/* Mobile connection indicator */}
@@ -79,15 +74,11 @@ const Navbar = ({ onMenuClick }) => {
             </span>
             <button
               onClick={handleLogout}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors touch-manipulation"
+              className="px-3 py-1 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors touch-manipulation"
               title="Logout"
               aria-label="Logout"
             >
-              <Icon 
-                name="log-out" 
-                size={18} 
-                className="text-gray-600 dark:text-gray-400" 
-              />
+              Logout
             </button>
           </div>
 

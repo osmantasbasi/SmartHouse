@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useDevices } from '../contexts/DeviceContext';
 import { useMqtt } from '../contexts/MqttContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useNotification } from '../contexts/NotificationContext';
 import Icon from '../components/ui/Icon';
 
 const Devices = () => {
@@ -18,7 +20,9 @@ const Devices = () => {
     clearAllDevices,
     cleanupInvalidDevices
   } = useDevices();
-  const { connectionStatus, publishMessage } = useMqtt();
+  const { connectionStatus, publishMessage, messages } = useMqtt();
+  const { user, getUserSetting } = useAuth();
+  const { showError, showWarning, showSuccess, showInfo } = useNotification();
   
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -32,18 +36,46 @@ const Devices = () => {
   });
   const [editDevice, setEditDevice] = useState(null);
 
-  const deviceList = getFilteredDevices();
+  // Filter devices based on user's MAC ID (except for admin users)
+  const getFilteredDevicesForUser = () => {
+    const allFilteredDevices = getFilteredDevices();
+    
+    if (user?.role === 'admin') {
+      // Admin users see all devices
+      return allFilteredDevices;
+    } else {
+      // Regular users only see devices matching their MAC ID
+      const userMacId = getUserSetting('mac_address', '');
+      if (!userMacId || userMacId.trim() === '') {
+        return []; // No MAC ID set, show no devices
+      }
+      
+      const userMacIdClean = userMacId.replace(/:/g, '').toLowerCase();
+      return allFilteredDevices.filter(device => {
+        if (!device || !device.topic) return false;
+        
+        const topicParts = device.topic.split('/');
+        if (topicParts.length >= 1) {
+          const topicUserMac = topicParts[0].toLowerCase();
+          return topicUserMac === userMacIdClean;
+        }
+        return false;
+      });
+    }
+  };
+
+  const deviceList = getFilteredDevicesForUser();
   const deviceTypes = Object.keys(deviceConfig);
-  const rooms = [...new Set(Object.values(devices).filter(device => device && device.room).map(device => device.room))];
+  const rooms = [...new Set(deviceList.filter(device => device && device.room).map(device => device.room))];
   
-  // Device statistics
-  const totalDevices = Object.keys(devices).length;
-  const onlineDevices = Object.values(devices).filter(device => device.isOnline).length;
+  // Device statistics - use filtered device list
+  const totalDevices = deviceList.length;
+  const onlineDevices = deviceList.filter(device => device.isOnline).length;
   const offlineDevices = totalDevices - onlineDevices;
   const devicesByType = deviceTypes.map(type => ({
     type,
-    count: Object.values(devices).filter(device => device.type === type).length,
-    online: Object.values(devices).filter(device => device.type === type && device.isOnline).length
+    count: deviceList.filter(device => device.type === type).length,
+    online: deviceList.filter(device => device.type === type && device.isOnline).length
   })).filter(stat => stat.count > 0);
 
   const handleAddDevice = async () => {
@@ -56,6 +88,9 @@ const Devices = () => {
         room: 'Living Room'
       });
       setShowAddModal(false);
+      showSuccess('Cihaz başarıyla eklendi.');
+    } else {
+      showWarning('Cihaz adı veya MQTT konusu boş bırakılamaz.');
     }
   };
 
@@ -85,21 +120,146 @@ const Devices = () => {
       
       setEditDevice(null);
       setShowEditModal(false);
+      showSuccess('Cihaz başarıyla güncellendi.');
+    } else {
+      showWarning('Cihaz adı veya MQTT konusu boş bırakılamaz.');
     }
   };
 
   const handleAutoDetect = async () => {
     const detectedDevices = autoDetectDevices();
     
-    if (detectedDevices.length > 0) {
-      for (let i = 0; i < detectedDevices.length; i++) {
-        await addDevice(detectedDevices[i]);
+    if (user?.role === 'admin') {
+      // Admin users can add all detected devices
+      if (detectedDevices.length > 0) {
+        for (let i = 0; i < detectedDevices.length; i++) {
+          await addDevice(detectedDevices[i]);
+        }
+        showSuccess(`${detectedDevices.length} cihaz başarıyla eklendi.`);
+      }
+    } else {
+      // Regular users can only add devices matching their MAC ID
+      const userMacId = getUserSetting('mac_address', '');
+      if (!userMacId || userMacId.trim() === '') {
+        showError('MAC adresi boş! Lütfen önce Config sayfasından MAC adresinizi girin.');
+        return;
+      }
+      
+      const userMacIdClean = userMacId.replace(/:/g, '').toLowerCase();
+      console.log('User MAC ID:', userMacIdClean);
+      console.log('Detected devices:', detectedDevices);
+      
+      // Filter newly detected devices
+      const filteredNewDevices = detectedDevices.filter(device => {
+        if (!device || !device.topic) return false;
+        
+        const topicParts = device.topic.split('/');
+        console.log('Device topic:', device.topic, 'Parts:', topicParts);
+        
+        if (topicParts.length >= 1) {
+          const topicUserMac = topicParts[0].toLowerCase();
+          console.log('Topic MAC:', topicUserMac, 'User MAC:', userMacIdClean, 'Match:', topicUserMac === userMacIdClean);
+          return topicUserMac === userMacIdClean;
+        }
+        return false;
+      });
+      
+      // Also check existing devices that match the MAC ID
+      const existingMatchingDevices = Object.values(devices).filter(device => {
+        if (!device || !device.topic) return false;
+        
+        const topicParts = device.topic.split('/');
+        if (topicParts.length >= 1) {
+          const topicUserMac = topicParts[0].toLowerCase();
+          return topicUserMac === userMacIdClean;
+        }
+        return false;
+      });
+      
+      // Check MQTT messages for devices matching the MAC ID
+      const messageTopics = new Set();
+      messages.forEach(msg => {
+        if (msg.topic && !msg.topic.endsWith('_send')) {
+          const topicParts = msg.topic.split('/');
+          if (topicParts.length >= 1) {
+            const topicUserMac = topicParts[0].toLowerCase();
+            if (topicUserMac === userMacIdClean) {
+              messageTopics.add(msg.topic);
+            }
+          }
+        }
+      });
+      
+      console.log('MQTT message topics matching MAC ID:', Array.from(messageTopics));
+      
+      // Create devices from MQTT messages that aren't already added
+      const messageDevices = [];
+      messageTopics.forEach(topic => {
+        const existingDevice = Object.values(devices).find(device => device.topic === topic);
+        if (!existingDevice) {
+          const topicParts = topic.split('/');
+          const deviceType = topicParts[topicParts.length - 1] || 'unknown';
+          
+          // Determine device type based on topic
+          let detectedType = 'relay';
+          let deviceName = 'Smart Relay';
+          
+          if (deviceType.includes('temp') || deviceType.includes('temperature')) {
+            detectedType = 'temperature_sensor';
+            deviceName = 'Temperature Sensor';
+          } else if (deviceType.includes('door') || deviceType.includes('contact')) {
+            detectedType = 'door_sensor';
+            deviceName = 'Door Sensor';
+          } else if (deviceType.includes('motion') || deviceType.includes('pir')) {
+            detectedType = 'motion_sensor';
+            deviceName = 'Motion Sensor';
+          } else if (deviceType.includes('relay') || deviceType.includes('light') || deviceType.includes('switch')) {
+            detectedType = 'relay';
+            deviceName = 'Smart Relay';
+          }
+          
+          messageDevices.push({
+            name: `${deviceName} (${deviceType})`,
+            type: detectedType,
+            topic: topic,
+            room: 'General'
+          });
+        }
+      });
+      
+      console.log('Filtered new devices:', filteredNewDevices);
+      console.log('Existing matching devices:', existingMatchingDevices);
+      console.log('Message-based devices:', messageDevices);
+      
+      // Add new devices from auto-detect
+      let addedCount = 0;
+      if (filteredNewDevices.length > 0) {
+        for (let i = 0; i < filteredNewDevices.length; i++) {
+          await addDevice(filteredNewDevices[i]);
+          addedCount++;
+        }
+      }
+      
+      // Add devices from MQTT messages
+      if (messageDevices.length > 0) {
+        for (let i = 0; i < messageDevices.length; i++) {
+          await addDevice(messageDevices[i]);
+          addedCount++;
+        }
+      }
+      
+      if (addedCount > 0) {
+        showSuccess(`${addedCount} cihaz başarıyla eklendi.`);
+      } else if (existingMatchingDevices.length > 0) {
+        showInfo(`${existingMatchingDevices.length} cihaz zaten mevcut. Yeni cihaz tespit edilmedi.`);
+      } else {
+        showWarning(`MAC adresinizle eşleşen cihaz bulunamadı. (Aranan: ${userMacIdClean})`);
       }
     }
   };
 
   const handleRemoveDevice = async (deviceId) => {
-    if (window.confirm('Are you sure you want to remove this device?')) {
+    if (window.confirm('Bu cihazı kaldırmak istediğinizden emin misiniz?')) {
       // Immediate remove without delay for better UX
       await removeDevice(deviceId);
       setSelectedDevices(prev => {
@@ -107,6 +267,7 @@ const Devices = () => {
         newSet.delete(deviceId);
         return newSet;
       });
+      showSuccess('Cihaz başarıyla kaldırıldı.');
     }
   };
 
@@ -132,10 +293,11 @@ const Devices = () => {
 
   const handleBulkAction = async (action) => {
     if (action === 'remove' && selectedDevices.size > 0) {
-      if (window.confirm(`Are you sure you want to remove ${selectedDevices.size} selected devices?`)) {
+      if (window.confirm(`${selectedDevices.size} seçili cihazı kaldırmak istediğinizden emin misiniz?`)) {
         // Immediate bulk remove without delay for better UX
         await Promise.all(Array.from(selectedDevices).map(deviceId => removeDevice(deviceId)));
         setSelectedDevices(new Set());
+        showSuccess(`${selectedDevices.size} cihaz başarıyla kaldırıldı.`);
       }
     }
   };
@@ -158,13 +320,14 @@ const Devices = () => {
 
   const handleCleanupInvalidDevices = () => {
     cleanupInvalidDevices();
+    showInfo('Geçersiz cihazlar temizlendi.');
   };
 
 
 
   const handleSendTestMessage = () => {
     if (!connectionStatus.connected) {
-      alert('MQTT not connected! Please connect to MQTT broker first.');
+      showError('MQTT bağlantısı yok! Lütfen önce MQTT broker\'a bağlanın.');
       return;
     }
     
@@ -182,21 +345,19 @@ const Devices = () => {
         payload: { Door: 'Closed', Battery: 95 }
       }
     ];
-    
-    testTopics.forEach((test, index) => {
-      setTimeout(() => {
-        publishMessage(test.topic, test.payload, 0);
-      }, index * 1000);
+
+    testTopics.forEach(test => {
+      publishMessage(test.topic, test.payload, 0);
     });
-    
-    alert(`Sending ${testTopics.length} test messages. Check auto-detect in a few seconds!`);
+
+    showInfo(`${testTopics.length} test mesajı gönderildi. Birkaç saniye sonra auto-detect\'i kontrol edin!`);
   };
 
   const handleClearAllDevices = () => {
-    if (window.confirm('Are you sure you want to remove ALL devices? This action cannot be undone and will clear all device data including localStorage.')) {
+    if (window.confirm('Tüm cihazları silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.')) {
       clearAllDevices();
       setSelectedDevices(new Set());
-      alert('All devices have been cleared from the system and storage.');
+      showSuccess('Tüm cihazlar sistemden ve depolamadan temizlendi.');
     }
   };
 
