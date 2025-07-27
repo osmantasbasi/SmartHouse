@@ -530,6 +530,9 @@ const Admin = () => {
                         Role
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        MAC Address
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Devices (Online/Total)
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -563,6 +566,14 @@ const Admin = () => {
                             <option value="user">User</option>
                             <option value="admin">Admin</option>
                           </select>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <Icon name="wifi" size={16} className="text-gray-400 mr-2" />
+                            <span className="text-sm font-mono text-gray-900 dark:text-white">
+                              {userData.macAddress || 'Not set'}
+                            </span>
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">

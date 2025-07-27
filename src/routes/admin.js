@@ -24,9 +24,10 @@ router.get('/users', requireAdmin, async (req, res) => {
   try {
     const users = await database.getAllUsers();
     
-    // Get device counts for each user
+    // Get device counts and MAC addresses for each user
     const usersWithDeviceCounts = await Promise.all(users.map(async (user) => {
       let deviceCount = 0;
+      let macAddress = '';
       
       if (user.role === 'admin') {
         // Admin users see all devices - get total device count from dashboard config
@@ -37,6 +38,8 @@ router.get('/users', requireAdmin, async (req, res) => {
       } else {
         // Regular users - get their MAC address and count matching devices
         const userMacId = await database.getUserSetting(user.id, 'mac_address', '');
+        macAddress = userMacId || '';
+        
         if (userMacId && userMacId.trim() !== '') {
           const userMacIdClean = userMacId.replace(/:/g, '').toLowerCase();
           
@@ -61,7 +64,8 @@ router.get('/users', requireAdmin, async (req, res) => {
       
       return {
         ...user,
-        deviceCount
+        deviceCount,
+        macAddress
       };
     }));
     
