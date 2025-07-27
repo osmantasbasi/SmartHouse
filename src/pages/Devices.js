@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useDevices } from '../contexts/DeviceContext';
 import { useMqtt } from '../contexts/MqttContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -37,7 +37,8 @@ const Devices = () => {
   const [editDevice, setEditDevice] = useState(null);
 
   // Filter devices based on user's MAC ID (except for admin users)
-  const getFilteredDevicesForUser = () => {
+  // Filter devices based on user's MAC ID (except for admin users)
+  const deviceList = useMemo(() => {
     const allFilteredDevices = getFilteredDevices();
     
     if (user?.role === 'admin') {
@@ -62,9 +63,9 @@ const Devices = () => {
         return false;
       });
     }
-  };
+  }, [devices, deviceFilters, user?.role, getUserSetting]);
 
-  const deviceList = getFilteredDevicesForUser();
+
   const deviceTypes = Object.keys(deviceConfig);
   const rooms = [...new Set(deviceList.filter(device => device && device.room).map(device => device.room))];
   
@@ -259,15 +260,23 @@ const Devices = () => {
   };
 
   const handleRemoveDevice = async (deviceId) => {
-          if (window.confirm('Are you sure you want to remove this device?')) {
-      // Immediate remove without delay for better UX
-      await removeDevice(deviceId);
-      setSelectedDevices(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(deviceId);
-        return newSet;
-      });
-      showSuccess('Device removed successfully.');
+    if (window.confirm('Are you sure you want to remove this device?')) {
+      try {
+        // Remove device
+        await removeDevice(deviceId);
+        
+        // Clear selected devices
+        setSelectedDevices(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(deviceId);
+          return newSet;
+        });
+        
+        showSuccess('Device removed successfully.');
+      } catch (error) {
+        console.error('Error removing device:', error);
+        showError('Failed to remove device. Please try again.');
+      }
     }
   };
 
@@ -294,10 +303,20 @@ const Devices = () => {
   const handleBulkAction = async (action) => {
     if (action === 'remove' && selectedDevices.size > 0) {
       if (window.confirm(`Are you sure you want to remove ${selectedDevices.size} selected devices?`)) {
-        // Immediate bulk remove without delay for better UX
-        await Promise.all(Array.from(selectedDevices).map(deviceId => removeDevice(deviceId)));
-        setSelectedDevices(new Set());
-        showSuccess(`${selectedDevices.size} devices removed successfully.`);
+        try {
+          const selectedDevicesArray = Array.from(selectedDevices);
+          
+          // Remove devices one by one to ensure proper state updates
+          for (const deviceId of selectedDevicesArray) {
+            await removeDevice(deviceId);
+          }
+          
+          setSelectedDevices(new Set());
+          showSuccess(`${selectedDevicesArray.length} devices removed successfully.`);
+        } catch (error) {
+          console.error('Error removing devices:', error);
+          showError('Failed to remove some devices. Please try again.');
+        }
       }
     }
   };
@@ -353,11 +372,16 @@ const Devices = () => {
     showInfo(`${testTopics.length} test messages sent. Check auto-detect in a few seconds!`);
   };
 
-  const handleClearAllDevices = () => {
+  const handleClearAllDevices = async () => {
     if (window.confirm('Are you sure you want to delete all devices? This action cannot be undone.')) {
-      clearAllDevices();
-      setSelectedDevices(new Set());
-      showSuccess('All devices cleared from system and storage.');
+      try {
+        await clearAllDevices();
+        setSelectedDevices(new Set());
+        showSuccess('All devices cleared from system and storage.');
+      } catch (error) {
+        console.error('Error clearing all devices:', error);
+        showError('Failed to clear all devices. Please try again.');
+      }
     }
   };
 

@@ -158,7 +158,7 @@ export const DeviceProvider = ({ children }) => {
       });
       setLastSyncTime(null);
     }
-  }, [isAuthenticated, dashboardConfig, lastSyncTime, devices, deviceLayouts]);
+  }, [isAuthenticated, dashboardConfig, lastSyncTime]);
 
   // Migration function to move localStorage data to database (one-time)
   useEffect(() => {
@@ -358,7 +358,7 @@ export const DeviceProvider = ({ children }) => {
   }, [devices, deviceLayouts, deviceOfflineTimers, connectionStatus.connected, unsubscribeFromTopic]);
 
   // Function to completely clear all devices and storage
-  const clearAllDevices = useCallback(() => {
+  const clearAllDevices = useCallback(async () => {
     
     // Clear all offline timers
     Object.values(deviceOfflineTimers).forEach(timer => {
@@ -373,9 +373,27 @@ export const DeviceProvider = ({ children }) => {
     // Clear deleted topics
     setDeletedTopics(new Set());
     
-    // Note: Manual save required after clearing all devices
+    // Update last sync time
+    setLastSyncTime(new Date().toISOString());
     
-  }, [deviceOfflineTimers, isAuthenticated, saveConfigToDatabase]);
+    // Save to database immediately
+    if (isAuthenticated) {
+      try {
+        const config = {
+          devices: {},
+          deviceLayouts: [],
+          deletedTopics: [],
+          deviceFilters,
+          lastUpdated: new Date().toISOString()
+        };
+        
+        await saveDashboardConfig(config);
+      } catch (error) {
+        console.error('Failed to save clear all to database:', error);
+      }
+    }
+    
+  }, [deviceOfflineTimers, isAuthenticated, saveDashboardConfig, deviceFilters]);
 
   const clearDeletedTopics = useCallback(() => {
     setDeletedTopics(new Set());
@@ -588,12 +606,7 @@ export const DeviceProvider = ({ children }) => {
     const device = devices[deviceId];
     
     if (!device) {
-      return;
-    }
-    
-    // Add topic to deleted topics to prevent auto-detection from re-adding it
-    if (device.topic) {
-      setDeletedTopics(prev => new Set([...prev, device.topic]));
+      throw new Error('Device not found');
     }
     
     // Clear offline timer if exists
@@ -611,26 +624,34 @@ export const DeviceProvider = ({ children }) => {
       unsubscribeFromTopic(device.topic);
     }
 
-    // Remove device from state immediately
+    // Remove device from state immediately - like clearAllDevices does
     const newDevices = { ...devices };
     delete newDevices[deviceId];
     setDevices(newDevices);
 
-    // Remove from layout immediately
+    // Remove from layout immediately - like clearAllDevices does
     const newLayouts = deviceLayouts.filter(layout => layout && layout.i && layout.i !== deviceId);
     setDeviceLayouts(newLayouts);
     
+    // Update last sync time to prevent reload from database
+    setLastSyncTime(new Date().toISOString());
+    
     // Save changes to database immediately to prevent reload from overriding
     if (isAuthenticated) {
-      const config = {
-        devices: newDevices,
-        deviceLayouts: newLayouts,
-        deletedTopics: Array.from(deletedTopics).concat(device.topic ? [device.topic] : []),
-        deviceFilters,
-        lastUpdated: new Date().toISOString()
-      };
-      
-      await saveDashboardConfig(config);
+      try {
+        const config = {
+          devices: newDevices,
+          deviceLayouts: newLayouts,
+          deletedTopics: Array.from(deletedTopics), // Don't add to deletedTopics for individual removal
+          deviceFilters,
+          lastUpdated: new Date().toISOString()
+        };
+        
+        await saveDashboardConfig(config);
+      } catch (error) {
+        console.error('Failed to save device removal to database:', error);
+        // Don't throw error, just log it
+      }
     }
     
   }, [devices, deviceLayouts, deviceOfflineTimers, connectionStatus.connected, unsubscribeFromTopic, isAuthenticated, saveDashboardConfig, deletedTopics, deviceFilters]);
