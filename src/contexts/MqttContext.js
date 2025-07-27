@@ -189,8 +189,8 @@ export const MqttProvider = ({ children }) => {
   const publishMessage = useCallback((topic, message, qos = 0) => {
     if (!socket || !connectionStatus.connected) return;
 
-    // Add _send suffix to topics when publishing from UI to devices
-    const sendTopic = topic.endsWith('_send') ? topic : `${topic}_send`;
+    // Add _sub suffix to topics when publishing from UI to devices
+    const sendTopic = topic.endsWith('_sub') ? topic : `${topic}_sub`;
     
     const payload = typeof message === 'string' ? message : JSON.stringify(message);
     socket.emit('publish', { topic: sendTopic, message: payload, qos });

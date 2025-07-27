@@ -179,7 +179,7 @@ const Devices = () => {
       // Check MQTT messages for devices matching the MAC ID
       const messageTopics = new Set();
       messages.forEach(msg => {
-        if (msg.topic && !msg.topic.endsWith('_send')) {
+        if (msg.topic && !msg.topic.endsWith('_sub')) {
           const topicParts = msg.topic.split('/');
           if (topicParts.length >= 1) {
             const topicUserMac = topicParts[0].toLowerCase();

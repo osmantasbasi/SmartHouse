@@ -430,8 +430,8 @@ export const DeviceProvider = ({ children }) => {
     const latestMessage = messages[0];
     const { topic, message } = latestMessage;
 
-    // Skip _send topics as they are for outgoing messages only
-    if (topic.endsWith('_send')) {
+    // Skip _sub topics as they are for outgoing messages only
+    if (topic.endsWith('_sub')) {
       return;
     }
 
@@ -723,11 +723,11 @@ export const DeviceProvider = ({ children }) => {
     // Get unique topics from recent messages that don't have devices yet and aren't deleted
     const messagesToCheck = messages.slice(0, 100); // Check more messages
     messagesToCheck.forEach(msg => {
-      // Skip if device already exists for this topic, topic was manually deleted, or is a _send topic
-      const existingDevice = Object.values(devices).find(device => device.topic === msg.topic);
-      const wasDeleted = deletedTopics.has(msg.topic);
-      const isSendTopic = msg.topic.endsWith('_send');
-      if (!existingDevice && !wasDeleted && !isSendTopic) {
+          // Skip if device already exists for this topic, topic was manually deleted, or is a _sub topic
+    const existingDevice = Object.values(devices).find(device => device.topic === msg.topic);
+    const wasDeleted = deletedTopics.has(msg.topic);
+    const isSubTopic = msg.topic.endsWith('_sub');
+    if (!existingDevice && !wasDeleted && !isSubTopic) {
         recentTopics.add(msg.topic);
       }
     });

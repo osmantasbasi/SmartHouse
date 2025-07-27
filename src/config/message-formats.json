@@ -2,7 +2,7 @@
   "temperature_sensor": {
     "description": "Sıcaklık ve nem sensörü mesaj formatı",
     "topic": "home/{room}/temperature",
-    "send_topic": "home/{room}/temperature_send",
+    "send_topic": "home/{room}/temperature_sub",
     "message": {
       "Temp": 25,
       "Humidity": 65
@@ -15,7 +15,7 @@
   "door_sensor": {
     "description": "Kapı sensörü mesaj formatı",
     "topic": "home/{room}/door",
-    "send_topic": "home/{room}/door_send",
+    "send_topic": "home/{room}/door_sub",
     "message": {
       "Door": "Closed"
     },
@@ -27,7 +27,7 @@
   "relay": {
     "description": "Akıllı röle mesaj formatı",
     "topic": "home/{room}/relay",
-    "send_topic": "home/{room}/relay_send",
+    "send_topic": "home/{room}/relay_sub",
     "message": {
       "Relay": "ON"
     },
@@ -41,7 +41,7 @@
   "motion_sensor": {
     "description": "Hareket sensörü mesaj formatı",
     "topic": "home/{room}/motion",
-    "send_topic": "home/{room}/motion_send",
+    "send_topic": "home/{room}/motion_sub",
     "message": {
       "Motion": "Detected"
     },
@@ -53,7 +53,7 @@
   "distance_sensor": {
     "description": "Mesafe sensörü mesaj formatı",
     "topic": "home/{room}/distance",
-    "send_topic": "home/{room}/distance_send",
+    "send_topic": "home/{room}/distance_sub",
     "message": {
       "Distance": 150
     },
@@ -66,7 +66,7 @@
   "smart_thermostat": {
     "description": "Akıllı termostat mesaj formatı",
     "topic": "home/{room}/thermostat",
-    "send_topic": "home/{room}/thermostat_send",
+    "send_topic": "home/{room}/thermostat_sub",
     "message": {
       "CurrentTemp": 22.5,
       "TargetTemp": 24,
@@ -81,7 +81,7 @@
   "air_quality": {
     "description": "Hava kalitesi sensörü mesaj formatı",
     "topic": "home/{room}/airquality",
-    "send_topic": "home/{room}/airquality_send",
+    "send_topic": "home/{room}/airquality_sub",
     "message": {
       "CO2": 450,
       "PM25": 12,
@@ -97,7 +97,7 @@
   "security_camera": {
     "description": "Güvenlik kamerası mesaj formatı",
     "topic": "home/{room}/camera",
-    "send_topic": "home/{room}/camera_send",
+    "send_topic": "home/{room}/camera_sub",
     "message": {
       "Status": "Recording",
       "Motion": false,
@@ -111,7 +111,7 @@
   "smart_lock": {
     "description": "Akıllı kilit mesaj formatı",
     "topic": "home/{room}/lock",
-    "send_topic": "home/{room}/lock_send",
+    "send_topic": "home/{room}/lock_sub",
     "message": {
       "Status": "Locked",
       "Battery": 78
@@ -124,7 +124,7 @@
   "water_leak_sensor": {
     "description": "Su kaçağı sensörü mesaj formatı",
     "topic": "home/{room}/leak",
-    "send_topic": "home/{room}/leak_send",
+    "send_topic": "home/{room}/leak_sub",
     "message": {
       "Status": "Dry",
       "Battery": 92
@@ -136,7 +136,7 @@
   "light_sensor": {
     "description": "Işık sensörü mesaj formatı",
     "topic": "home/{room}/light",
-    "send_topic": "home/{room}/light_send",
+    "send_topic": "home/{room}/light_sub",
     "message": {
       "Light": 850
     },
@@ -149,7 +149,7 @@
   "smoke_detector": {
     "description": "Duman dedektörü mesaj formatı",
     "topic": "home/{room}/smoke",
-    "send_topic": "home/{room}/smoke_send",
+    "send_topic": "home/{room}/smoke_sub",
     "message": {
       "Status": "Normal",
       "Smoke": 0,
@@ -162,7 +162,7 @@
   "gas_sensor": {
     "description": "Gaz sensörü mesaj formatı",
     "topic": "home/{room}/gas",
-    "send_topic": "home/{room}/gas_send",
+    "send_topic": "home/{room}/gas_sub",
     "message": {
       "CO": 0,
       "Status": "Normal",
@@ -177,7 +177,7 @@
   "soil_moisture": {
     "description": "Toprak nemi sensörü mesaj formatı",
     "topic": "home/garden/soil",
-    "send_topic": "home/garden/soil_send",
+    "send_topic": "home/garden/soil_sub",
     "message": {
       "Moisture": 65
     },
@@ -190,7 +190,7 @@
   "wind_sensor": {
     "description": "Rüzgar sensörü mesaj formatı",
     "topic": "home/outdoor/wind",
-    "send_topic": "home/outdoor/wind_send",
+    "send_topic": "home/outdoor/wind_sub",
     "message": {
       "Speed": 12.5,
       "Direction": 180
@@ -203,7 +203,7 @@
   "rain_sensor": {
     "description": "Yağmur sensörü mesaj formatı",
     "topic": "home/outdoor/rain",
-    "send_topic": "home/outdoor/rain_send",
+    "send_topic": "home/outdoor/rain_sub",
     "message": {
       "Rain": true
     },

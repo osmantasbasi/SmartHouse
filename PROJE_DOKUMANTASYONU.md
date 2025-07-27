@@ -255,7 +255,7 @@ home/{room}/{device_type}/{device_id}
 
 ### Kontrol Topic Ayrımı
 - **Gelen Veri**: `home/oturmaodasi/role`
-- **Giden Kontrol**: `home/oturmaodasi/role_send`
+- **Giden Kontrol**: `home/oturmaodasi/role_sub`
 
 Bu ayrım geri bildirim döngülerini önler ve istenmeyen cihaz oluşumunu engeller.
 

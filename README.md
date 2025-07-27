@@ -277,7 +277,7 @@ All MQTT messages must be valid JSON:
 The system uses a clean separation between incoming and outgoing topics:
 
 - **Incoming Data**: `home/livingroom/relay`
-- **Outgoing Control**: `home/livingroom/relay_send`
+- **Outgoing Control**: `home/livingroom/relay_sub`
 
 This prevents command feedback loops and unwanted device creation.
 
@@ -286,7 +286,7 @@ Devices are automatically detected when:
 1. **Topic patterns** match known device types
 2. **Message structure** contains expected data keys
 3. **Recent activity** is detected on new topics
-4. **Topic excludes** "_send" suffix (control topics)
+4. **Topic excludes** "_sub" suffix (control topics)
 
 ## 📱 Responsive Design
 
