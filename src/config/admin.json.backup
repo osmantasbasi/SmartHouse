@@ -1,0 +1,20 @@
+{
+  "defaultAdmin": {
+    "username": "test",
+    "email": "test@test.com",
+    "password": "Bymoments109.",
+    "role": "admin"
+  },
+  "adminSettings": {
+    "allowMultipleAdmins": true,
+    "forcePasswordChange": false,
+    "sessionTimeout": 86400000,
+    "maxLoginAttempts": 3
+  },
+  "systemSettings": {
+    "maxUsers": 100,
+    "systemName": "Smart Home Dashboard",
+    "enableRegistration": true,
+    "defaultUserRole": "user"
+  }
+}

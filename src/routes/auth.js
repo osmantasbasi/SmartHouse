@@ -170,6 +170,54 @@ router.get('/debug-config', async (req, res) => {
   }
 });
 
+// Change password endpoint
+router.post('/change-password', async (req, res) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    // Validate input
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ error: 'All password fields are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: 'New passwords do not match' });
+    }
+
+    // Get current user
+    const user = await database.getUserById(req.session.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Verify current password
+    const isCurrentPasswordValid = await database.verifyPassword(currentPassword, user.password_hash);
+    if (!isCurrentPasswordValid) {
+      return res.status(400).json({ error: 'Current password is incorrect' });
+    }
+
+    // Update password
+    const result = await database.updateUser(user.username, { password: newPassword });
+    
+    if (result.updated) {
+      res.json({ message: 'Password changed successfully', success: true });
+    } else {
+      res.status(500).json({ error: 'Failed to update password' });
+    }
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // User settings endpoints
 router.get('/user-settings', async (req, res) => {
   try {

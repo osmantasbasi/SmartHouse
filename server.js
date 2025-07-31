@@ -9,6 +9,8 @@ const http = require('http');
 const authRoutes = require('./src/routes/auth');
 const adminRoutes = require('./src/routes/admin');
 const database = require('./src/config/database');
+const migrateAdminConfig = require('./src/config/migrate-admin-config');
+const migrateToDatabase = require('./src/config/migrate-to-database');
 
 const app = express();
 const server = http.createServer(app);
@@ -613,6 +615,30 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  // Server started
-}); 
+
+// Initialize server with migration
+async function initializeServer() {
+  try {
+    console.log('🔄 Initializing server...');
+    
+    // Run admin config migration (legacy)
+    console.log('📦 Running legacy admin config migration...');
+    await migrateAdminConfig();
+    
+    // Run new database migration
+    console.log('🗄️ Running database migration...');
+    await migrateToDatabase();
+    
+    // Start server
+    server.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📊 Admin panel: http://localhost:${PORT}/admin`);
+      console.log(`🏠 Dashboard: http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error('❌ Failed to initialize server:', error);
+    process.exit(1);
+  }
+}
+
+initializeServer(); 

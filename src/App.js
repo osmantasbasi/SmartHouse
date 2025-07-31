@@ -14,6 +14,7 @@ import Dashboard from './pages/Dashboard';
 import Devices from './pages/Devices';
 import Admin from './pages/Admin';
 import Config from './pages/Config';
+import Profile from './pages/Profile';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -90,6 +91,7 @@ const AppContent = () => {
                       <Route path="/devices" element={<Devices />} />
                       <Route path="/admin" element={<Admin />} />
                       <Route path="/config" element={<Config />} />
+                      <Route path="/profile" element={<Profile />} />
                     </Routes>
                   </div>
                 </div>

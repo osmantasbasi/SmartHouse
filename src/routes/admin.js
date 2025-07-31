@@ -9,7 +9,8 @@ const requireAdmin = async (req, res, next) => {
   }
 
   try {
-    const user = await database.getUserByUsername(req.session.username);
+    // Use userId to get user from database
+    const user = await database.getUserById(req.session.userId);
     if (!user || user.role !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
@@ -145,11 +146,14 @@ router.get('/stats', requireAdmin, async (req, res) => {
   try {
     const users = await database.getAllUsers();
     const settings = await database.getAllAdminSettings();
+    const systemConfig = await database.getAllSystemConfig();
     
     const stats = {
       totalUsers: users.length,
       adminUsers: users.filter(u => u.role === 'admin').length,
+      superAdminUsers: users.filter(u => u.role === 'superadmin').length,
       totalSettings: settings.length,
+      totalSystemConfig: systemConfig.length,
       timestamp: new Date().toISOString()
     };
     
@@ -159,10 +163,112 @@ router.get('/stats', requireAdmin, async (req, res) => {
   }
 });
 
+// Get users by role
+router.get('/users/role/:role', requireAdmin, async (req, res) => {
+  try {
+    const { role } = req.params;
+    const users = await database.getUsersByRole(role);
+    res.json({ users, success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get admin users
+router.get('/users/admin', requireAdmin, async (req, res) => {
+  try {
+    const adminUsers = await database.getAdminUsers();
+    res.json({ users: adminUsers, success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get super admin users
+router.get('/users/superadmin', requireAdmin, async (req, res) => {
+  try {
+    const superAdminUsers = await database.getSuperAdminUsers();
+    res.json({ users: superAdminUsers, success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update user by username
+router.put('/users/username/:username', requireAdmin, async (req, res) => {
+  try {
+    const { username } = req.params;
+    const updates = req.body;
+    
+    // Prevent updating own account
+    const currentUser = await database.getUserById(req.session.userId);
+    if (currentUser && currentUser.username === username) {
+      return res.status(400).json({ error: 'Cannot update your own account' });
+    }
+
+    const result = await database.updateUser(username, updates);
+    if (result.updated) {
+      res.json({ message: 'User updated successfully', success: true });
+    } else {
+      res.status(404).json({ error: 'User not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete user by username
+router.delete('/users/username/:username', requireAdmin, async (req, res) => {
+  try {
+    const { username } = req.params;
+    
+    // Prevent deleting own account
+    const currentUser = await database.getUserById(req.session.userId);
+    if (currentUser && currentUser.username === username) {
+      return res.status(400).json({ error: 'Cannot delete your own account' });
+    }
+
+    const result = await database.deleteUserByUsername(username);
+    if (result.deleted) {
+      res.json({ message: 'User deleted successfully', success: true });
+    } else {
+      res.status(404).json({ error: 'User not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get system config
+router.get('/system-config', requireAdmin, async (req, res) => {
+  try {
+    const systemConfig = await database.getAllSystemConfig();
+    res.json({ config: systemConfig, success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update system config
+router.post('/system-config', requireAdmin, async (req, res) => {
+  try {
+    const { key, value, type, description } = req.body;
+    
+    if (!key) {
+      return res.status(400).json({ error: 'Config key is required' });
+    }
+
+    await database.setSystemConfig(key, value, type, description);
+    res.json({ message: 'System config updated', success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get admin config
 router.get('/config', requireAdmin, async (req, res) => {
   try {
-    const config = database.loadAdminConfig();
+    const config = await database.loadAdminConfig();
     // Don't send password in response for security
     const safeConfig = {
       ...config,
@@ -193,11 +299,11 @@ router.post('/config', requireAdmin, async (req, res) => {
 
     // If password is not changed (shows dots), load current password
     if (config.defaultAdmin.password === '••••••••') {
-      const currentConfig = database.loadAdminConfig();
+      const currentConfig = await database.loadAdminConfig();
       config.defaultAdmin.password = currentConfig.defaultAdmin.password;
     }
 
-    const success = database.saveAdminConfig(config);
+    const success = await database.saveAdminConfig(config);
     
     if (success) {
       res.json({ message: 'Admin configuration updated successfully', success: true });
@@ -214,21 +320,31 @@ router.post('/reset-password', requireAdmin, async (req, res) => {
   try {
     const { newPassword } = req.body;
     
+    console.log('Reset password request received:', { newPassword: newPassword ? '***' : 'empty' });
+    
     if (!newPassword || newPassword.length < 6) {
+      console.log('Password validation failed: too short or empty');
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
-    const config = database.loadAdminConfig();
+    console.log('Loading admin config...');
+    const config = await database.loadAdminConfig();
+    console.log('Admin config loaded, updating password...');
+    
     config.defaultAdmin.password = newPassword;
     
-    const success = database.saveAdminConfig(config);
+    console.log('Saving admin config...');
+    const success = await database.saveAdminConfig(config);
     
     if (success) {
+      console.log('Admin password updated successfully');
       res.json({ message: 'Admin password updated successfully', success: true });
     } else {
+      console.log('Failed to update admin password');
       res.status(500).json({ error: 'Failed to update password' });
     }
   } catch (error) {
+    console.error('Reset password error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

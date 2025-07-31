@@ -69,6 +69,30 @@ class Database {
       )
     `;
 
+    const createSystemConfigTable = `
+      CREATE TABLE IF NOT EXISTS system_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        config_key TEXT UNIQUE NOT NULL,
+        config_value TEXT,
+        config_type TEXT DEFAULT 'string',
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    const createUserRolesTable = `
+      CREATE TABLE IF NOT EXISTS user_roles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role_name TEXT UNIQUE NOT NULL,
+        role_description TEXT,
+        permissions TEXT,
+        is_active BOOLEAN DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
     const createMqttConfigTable = `
       CREATE TABLE IF NOT EXISTS mqtt_config (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,6 +112,8 @@ class Database {
     this.db.run(createUserSettingsTable);
     this.db.run(createDashboardConfigTable);
     this.db.run(createAdminSettingsTable);
+    this.db.run(createSystemConfigTable);
+    this.db.run(createUserRolesTable);
     this.db.run(createMqttConfigTable);
 
     // Add role column to existing users table if it doesn't exist
@@ -99,48 +125,150 @@ class Database {
     this.createInitialAdmin();
   }
 
-  // Load admin config from local file
-  loadAdminConfig() {
+  // Load admin config from database
+  async loadAdminConfig() {
     try {
-      const configPath = path.join(__dirname, 'admin.json');
-      if (fs.existsSync(configPath)) {
-        const configData = fs.readFileSync(configPath, 'utf8');
-        return JSON.parse(configData);
+      const config = {
+        defaultAdmin: {
+          username: 'superadmin',
+          email: 'superadmin@localhost',
+          password: 'admin123',
+          role: 'admin'
+        },
+        adminSettings: {
+          allowMultipleAdmins: true,
+          forcePasswordChange: false,
+          sessionTimeout: 86400000,
+          maxLoginAttempts: 5
+        },
+        systemSettings: {
+          maxUsers: 100,
+          systemName: 'Smart Home Dashboard',
+          enableRegistration: true,
+          defaultUserRole: 'user'
+        }
+      };
+
+      // Load default admin settings from database
+      const defaultAdminSettings = await this.getAdminSetting('default_admin_username');
+      if (defaultAdminSettings) {
+        config.defaultAdmin.username = defaultAdminSettings.setting_value;
       }
+
+      const defaultAdminEmail = await this.getAdminSetting('default_admin_email');
+      if (defaultAdminEmail) {
+        config.defaultAdmin.email = defaultAdminEmail.setting_value;
+      }
+
+      // Don't load actual password from config for security
+      // Password is managed separately in users table
+      config.defaultAdmin.password = '••••••••';
+
+      // Load admin settings from database
+      const allowMultipleAdmins = await this.getAdminSetting('allow_multiple_admins');
+      if (allowMultipleAdmins) {
+        config.adminSettings.allowMultipleAdmins = allowMultipleAdmins.setting_value === 'true';
+      }
+
+      const forcePasswordChange = await this.getAdminSetting('force_password_change');
+      if (forcePasswordChange) {
+        config.adminSettings.forcePasswordChange = forcePasswordChange.setting_value === 'true';
+      }
+
+      const sessionTimeout = await this.getAdminSetting('session_timeout');
+      if (sessionTimeout) {
+        config.adminSettings.sessionTimeout = parseInt(sessionTimeout.setting_value) || 86400000;
+      }
+
+      const maxLoginAttempts = await this.getAdminSetting('max_login_attempts');
+      if (maxLoginAttempts) {
+        config.adminSettings.maxLoginAttempts = parseInt(maxLoginAttempts.setting_value) || 5;
+      }
+
+      // Load system settings from database
+      const maxUsers = await this.getAdminSetting('max_users');
+      if (maxUsers) {
+        config.systemSettings.maxUsers = parseInt(maxUsers.setting_value) || 100;
+      }
+
+      const systemName = await this.getAdminSetting('system_name');
+      if (systemName) {
+        config.systemSettings.systemName = systemName.setting_value;
+      }
+
+      const enableRegistration = await this.getAdminSetting('enable_registration');
+      if (enableRegistration) {
+        config.systemSettings.enableRegistration = enableRegistration.setting_value === 'true';
+      }
+
+      const defaultUserRole = await this.getAdminSetting('default_user_role');
+      if (defaultUserRole) {
+        config.systemSettings.defaultUserRole = defaultUserRole.setting_value;
+      }
+
+      return config;
     } catch (error) {
-      // Error loading admin config, use defaults
+      // Return default config if error occurs
+      return {
+        defaultAdmin: {
+          username: 'superadmin',
+          email: 'superadmin@localhost',
+          password: 'admin123',
+          role: 'admin'
+        },
+        adminSettings: {
+          allowMultipleAdmins: true,
+          forcePasswordChange: false,
+          sessionTimeout: 86400000,
+          maxLoginAttempts: 5
+        },
+        systemSettings: {
+          maxUsers: 100,
+          systemName: 'Smart Home Dashboard',
+          enableRegistration: true,
+          defaultUserRole: 'user'
+        }
+      };
     }
-    
-    // Return default config if file doesn't exist or can't be read
-    return {
-      defaultAdmin: {
-        username: 'superadmin',
-        email: 'superadmin@localhost',
-        password: 'admin123',
-        role: 'admin'
-      },
-      adminSettings: {
-        allowMultipleAdmins: true,
-        forcePasswordChange: false,
-        sessionTimeout: 86400000,
-        maxLoginAttempts: 5
-      },
-      systemSettings: {
-        maxUsers: 100,
-        systemName: 'Smart Home Dashboard',
-        enableRegistration: true,
-        defaultUserRole: 'user'
-      }
-    };
   }
 
-  // Save admin config to local file
-  saveAdminConfig(config) {
+  // Save admin config to database
+  async saveAdminConfig(config) {
     try {
-      const configPath = path.join(__dirname, 'admin.json');
-      fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+      // Save default admin settings
+      if (config.defaultAdmin) {
+        await this.setAdminSetting('default_admin_username', config.defaultAdmin.username, 'string', 'Default admin username');
+        await this.setAdminSetting('default_admin_email', config.defaultAdmin.email, 'string', 'Default admin email');
+        if (config.defaultAdmin.password && config.defaultAdmin.password !== '••••••••') {
+          console.log('Updating admin password in admin_settings table...');
+          await this.setAdminSetting('default_admin_password', config.defaultAdmin.password, 'string', 'Default admin password');
+          
+          console.log('Updating admin user password in users table...');
+          // Also update the actual admin user's password in users table
+          const updateResult = await this.updateAdminUserPassword(config.defaultAdmin.username, config.defaultAdmin.password);
+          console.log('Admin user password update result:', updateResult);
+        }
+      }
+
+      // Save admin settings
+      if (config.adminSettings) {
+        await this.setAdminSetting('allow_multiple_admins', config.adminSettings.allowMultipleAdmins.toString(), 'boolean', 'Allow multiple admin users');
+        await this.setAdminSetting('force_password_change', config.adminSettings.forcePasswordChange.toString(), 'boolean', 'Force password change on first login');
+        await this.setAdminSetting('session_timeout', config.adminSettings.sessionTimeout.toString(), 'number', 'Session timeout in milliseconds');
+        await this.setAdminSetting('max_login_attempts', config.adminSettings.maxLoginAttempts.toString(), 'number', 'Maximum login attempts before lockout');
+      }
+
+      // Save system settings
+      if (config.systemSettings) {
+        await this.setAdminSetting('max_users', config.systemSettings.maxUsers.toString(), 'number', 'Maximum number of users allowed');
+        await this.setAdminSetting('system_name', config.systemSettings.systemName, 'string', 'System display name');
+        await this.setAdminSetting('enable_registration', config.systemSettings.enableRegistration.toString(), 'boolean', 'Allow new user registration');
+        await this.setAdminSetting('default_user_role', config.systemSettings.defaultUserRole, 'string', 'Default role for new users');
+      }
+
       return true;
     } catch (error) {
+      console.error('Error saving admin config:', error);
       return false;
     }
   }
@@ -148,7 +276,7 @@ class Database {
   // Create initial admin user if none exists
   async createInitialAdmin() {
     try {
-      const adminConfig = this.loadAdminConfig();
+      const adminConfig = await this.loadAdminConfig();
       const defaultAdmin = adminConfig.defaultAdmin;
       
       // First, check if superadmin user already exists
@@ -221,6 +349,19 @@ class Database {
     return new Promise((resolve, reject) => {
       const sql = 'SELECT * FROM users WHERE username = ?';
       this.db.get(sql, [username], (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row);
+        }
+      });
+    });
+  }
+
+  async getUserById(userId) {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM users WHERE id = ?';
+      this.db.get(sql, [userId], (err, row) => {
         if (err) {
           reject(err);
         } else {
@@ -441,6 +582,49 @@ class Database {
     });
   }
 
+  // System config methods
+  async getSystemConfig(key) {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM system_config WHERE config_key = ?';
+      this.db.get(sql, [key], (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row);
+        }
+      });
+    });
+  }
+
+  async setSystemConfig(key, value, type = 'string', description = '') {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        INSERT OR REPLACE INTO system_config (config_key, config_value, config_type, description, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `;
+      this.db.run(sql, [key, value, type, description], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ id: this.lastID });
+        }
+      });
+    });
+  }
+
+  async getAllSystemConfig() {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM system_config ORDER BY config_key';
+      this.db.all(sql, [], (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  }
+
   // Helper function to manually make a user admin (for troubleshooting)
   async makeUserAdmin(username) {
     return new Promise((resolve, reject) => {
@@ -452,6 +636,161 @@ class Database {
           resolve({ username, changes: this.changes, isAdmin: this.changes > 0 });
         }
       });
+    });
+  }
+
+  // User management functions
+  async updateUser(username, updates) {
+    return new Promise((resolve, reject) => {
+      const { email, role, password } = updates;
+      let sql = 'UPDATE users SET updated_at = CURRENT_TIMESTAMP';
+      const params = [];
+
+      if (email) {
+        sql += ', email = ?';
+        params.push(email);
+      }
+
+      if (role) {
+        sql += ', role = ?';
+        params.push(role);
+      }
+
+      if (password) {
+        // Hash the password
+        const bcrypt = require('bcrypt');
+        const saltRounds = 10;
+        bcrypt.hash(password, saltRounds, (err, hash) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          sql += ', password_hash = ?';
+          params.push(hash);
+          params.push(username);
+          sql += ' WHERE username = ?';
+
+          this.db.run(sql, params, function(err) {
+            if (err) {
+              reject(err);
+            } else {
+              resolve({ username, changes: this.changes, updated: this.changes > 0 });
+            }
+          });
+        });
+      } else {
+        params.push(username);
+        sql += ' WHERE username = ?';
+
+        this.db.run(sql, params, function(err) {
+          if (err) {
+            reject(err);
+          } else {
+            resolve({ username, changes: this.changes, updated: this.changes > 0 });
+          }
+        });
+      }
+    });
+  }
+
+  async deleteUserByUsername(username) {
+    return new Promise((resolve, reject) => {
+      const sql = 'DELETE FROM users WHERE username = ?';
+      this.db.run(sql, [username], function(err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ username, changes: this.changes, deleted: this.changes > 0 });
+        }
+      });
+    });
+  }
+
+  async getUsersByRole(role) {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT * FROM users WHERE role = ? ORDER BY username';
+      this.db.all(sql, [role], (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows);
+        }
+      });
+    });
+  }
+
+  async getAdminUsers() {
+    return this.getUsersByRole('admin');
+  }
+
+  async getSuperAdminUsers() {
+    return this.getUsersByRole('superadmin');
+  }
+
+  async getUserCount() {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT COUNT(*) as count FROM users';
+      this.db.get(sql, [], (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row.count);
+        }
+      });
+    });
+  }
+
+  async getUserCountByRole(role) {
+    return new Promise((resolve, reject) => {
+      const sql = 'SELECT COUNT(*) as count FROM users WHERE role = ?';
+      this.db.get(sql, [role], (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row.count);
+        }
+      });
+    });
+  }
+
+  // Update admin user password in users table
+  async updateAdminUserPassword(username, newPassword) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        console.log(`Updating admin user password for: ${username}`);
+        
+        // First check if the user exists
+        const existingUser = await this.getUserByUsername(username);
+        if (!existingUser) {
+          console.log(`User ${username} not found in users table, creating...`);
+          // Create the admin user if it doesn't exist
+          await this.createUser(username, 'admin@localhost', newPassword);
+          // Make sure the user has admin role
+          await this.makeUserAdmin(username);
+        }
+        
+        // Hash the password
+        const bcrypt = require('bcrypt');
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+        
+        console.log(`Password hashed successfully for: ${username}`);
+        
+        // Update the user's password in the users table
+        const sql = 'UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE username = ?';
+        this.db.run(sql, [hashedPassword, username], function(err) {
+          if (err) {
+            console.error('Error updating admin user password:', err);
+            reject(err);
+          } else {
+            console.log(`Admin user password updated successfully for: ${username}, changes: ${this.changes}`);
+            resolve({ username, changes: this.changes, updated: this.changes > 0 });
+          }
+        });
+      } catch (error) {
+        console.error('Error in updateAdminUserPassword:', error);
+        reject(error);
+      }
     });
   }
 

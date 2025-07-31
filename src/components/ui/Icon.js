@@ -9,7 +9,9 @@ import {
   TrendingUp, TrendingDown, Battery, BatteryLow, Signal, SignalHigh,
   SignalLow, MapPin, Clock, Calendar, Lightbulb, Fan, AirVent,
   Shield, AlertCircle, Info, Check, AlertOctagon, Grid3X3, List,
-  Code, XCircle, Bug
+  Code, XCircle, Bug, ThermometerSnowflake, Flame, Sprout, CloudRain,
+  MessageSquare, Send, FileText, PlusCircle, Copy, UserCog, Key,
+  LogOut, User
 } from 'lucide-react';
 
 const iconMap = {
@@ -43,6 +45,7 @@ const iconMap = {
 
   // Device types
   'thermometer': Thermometer,
+  'thermometer-snowflake': ThermometerSnowflake,
   'door-open': DoorOpen,
   'door-closed': DoorClosed,
   'zap': Zap,
@@ -66,6 +69,10 @@ const iconMap = {
   'fan': Fan,
   'air-vent': AirVent,
   'shield': Shield,
+  'flame': Flame,
+  'sprout': Sprout,
+  'cloud-rain': CloudRain,
+  'sensor': Activity,
 
   // Status indicators
   'wifi': Wifi,
@@ -89,6 +96,15 @@ const iconMap = {
   'list': List,
   'code': Code,
   'bug': Bug,
+  'message-square': MessageSquare,
+  'send': Send,
+  'file-text': FileText,
+  'log-out': LogOut,
+  'user': User,
+  'plus-circle': PlusCircle,
+  'copy': Copy,
+  'user-cog': UserCog,
+  'key': Key,
 };
 
 const Icon = ({ 

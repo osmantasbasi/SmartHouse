@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useMqtt } from '../contexts/MqttContext';
 import { useDevices } from '../contexts/DeviceContext';
 import Icon from '../components/ui/Icon';
+import SensorManager from '../components/admin/SensorManager';
 
 const Admin = () => {
   const { user, getUserSetting } = useAuth();
@@ -11,7 +12,26 @@ const Admin = () => {
   const [activeTab, setActiveTab] = useState('users');
   const [users, setUsers] = useState([]);
   const [adminSettings, setAdminSettings] = useState([]);
-  const [adminConfig, setAdminConfig] = useState(null);
+  const [adminConfig, setAdminConfig] = useState({
+    defaultAdmin: {
+      username: '',
+      email: '',
+      password: '',
+      role: 'admin'
+    },
+    adminSettings: {
+      allowMultipleAdmins: true,
+      forcePasswordChange: false,
+      sessionTimeout: 86400000,
+      maxLoginAttempts: 5
+    },
+    systemSettings: {
+      maxUsers: 100,
+      systemName: 'Smart Home Dashboard',
+      enableRegistration: true,
+      defaultUserRole: 'user'
+    }
+  });
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -30,6 +50,12 @@ const Admin = () => {
   const [connectionMessage, setConnectionMessage] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [sensorTimeout, setSensorTimeout] = useState('60');
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [resetPasswordData, setResetPasswordData] = useState({
+    newPassword: '',
+    confirmPassword: '',
+    showPassword: false
+  });
 
   // Calculate device count for each user
   const getUserDeviceCount = (userData) => {
@@ -132,7 +158,11 @@ const Admin = () => {
       
       if (response.ok) {
         const data = await response.json();
-        setAdminConfig(data.config);
+        // Merge API data with current state to preserve any missing fields
+        setAdminConfig(prevConfig => ({
+          ...prevConfig,
+          ...data.config
+        }));
       } else {
         const errorData = await response.json();
         setMessage(errorData.error || 'Error loading admin config');
@@ -409,15 +439,31 @@ const Admin = () => {
 
   // Reset admin password
   const resetAdminPassword = async () => {
-    const newPassword = prompt('Enter new admin password (min 6 characters):');
+    setShowResetPasswordModal(true);
+  };
+
+  // Handle password reset submission
+  const handlePasswordReset = async () => {
+    const { newPassword, confirmPassword } = resetPasswordData;
+    
+    console.log('Password reset attempt:', { newPassword: newPassword ? '***' : 'empty', confirmPassword: confirmPassword ? '***' : 'empty' });
+    
+    // Validation
     if (!newPassword || newPassword.length < 6) {
       setMessage('Password must be at least 6 characters');
       setTimeout(() => setMessage(''), 3000);
       return;
     }
 
+    if (newPassword !== confirmPassword) {
+      setMessage('Passwords do not match');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+
     setLoading(true);
     try {
+      console.log('Sending password reset request...');
       const response = await fetch('/api/admin/reset-password', {
         method: 'POST',
         headers: {
@@ -427,19 +473,31 @@ const Admin = () => {
         body: JSON.stringify({ newPassword }),
       });
 
+      console.log('Response status:', response.status);
+      const data = await response.json();
+      console.log('Response data:', data);
+
       if (response.ok) {
         setMessage('Admin password updated successfully');
+        setShowResetPasswordModal(false);
+        setResetPasswordData({ newPassword: '', confirmPassword: '', showPassword: false });
         await loadAdminConfig();
       } else {
-        const data = await response.json();
         setMessage(data.error || 'Error updating admin password');
       }
     } catch (error) {
+      console.error('Password reset error:', error);
       setMessage('Error updating admin password');
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(''), 3000);
     }
+  };
+
+  // Close reset password modal
+  const closeResetPasswordModal = () => {
+    setShowResetPasswordModal(false);
+    setResetPasswordData({ newPassword: '', confirmPassword: '', showPassword: false });
   };
 
   if (user?.role !== 'admin') {
@@ -486,6 +544,7 @@ const Admin = () => {
         <div className="flex border-b border-gray-200 dark:border-gray-700">
           {[
             { id: 'users', name: 'User Management', icon: 'users' },
+            { id: 'sensors', name: 'Sensor Management', icon: 'sensor' },
             { id: 'config', name: 'Admin Config', icon: 'user-cog' },
             { id: 'mqtt', name: 'MQTT Settings', icon: 'wifi' },
             { id: 'system', name: 'System Settings', icon: 'settings' },
@@ -607,6 +666,11 @@ const Admin = () => {
             </div>
           )}
 
+          {/* Sensors Tab */}
+          {activeTab === 'sensors' && (
+            <SensorManager />
+          )}
+
           {/* Admin Config Tab */}
           {activeTab === 'config' && (
             <div className="space-y-4">
@@ -624,10 +688,10 @@ const Admin = () => {
                       </h3>
                       <button
                         onClick={resetAdminPassword}
-                        className="btn btn-secondary text-sm"
+                        className="inline-flex items-center px-3 py-2 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-sm font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={loading}
                       >
-                        <Icon name="key" size={16} className="mr-1" />
+                        <Icon name="key" size={16} className="mr-2" />
                         Reset Password
                       </button>
                     </div>
@@ -681,13 +745,21 @@ const Admin = () => {
                         <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
                           Password
                         </label>
-                        <input
-                          type="password"
-                          value={adminConfig.defaultAdmin.password}
-                          readOnly
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white cursor-not-allowed"
-                          placeholder="Use Reset Password button to change"
-                        />
+                        <div className="relative">
+                          <input
+                            type="password"
+                            value={adminConfig.defaultAdmin.password}
+                            readOnly
+                            className="w-full px-3 py-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed"
+                            placeholder="••••••••"
+                          />
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                            <Icon name="lock" size={16} className="text-gray-400" />
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Click "Reset Password" to change
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -1256,6 +1328,176 @@ const Admin = () => {
           )}
         </div>
       </div>
+
+      {/* Reset Password Modal */}
+      {showResetPasswordModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-lg max-w-md w-full">
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center">
+                  <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg mr-3">
+                    <Icon name="key" size={24} className="text-red-600 dark:text-red-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      Reset Admin Password
+                    </h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Set a new password for the default admin account
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={closeResetPasswordModal}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                >
+                  <Icon name="x" size={20} className="text-gray-500 dark:text-gray-400" />
+                </button>
+              </div>
+
+              {/* Form */}
+              <form onSubmit={(e) => { 
+                e.preventDefault(); 
+                console.log('Form submitted!');
+                console.log('Form data:', resetPasswordData);
+                console.log('Form validation:', {
+                  hasNewPassword: !!resetPasswordData.newPassword,
+                  hasConfirmPassword: !!resetPasswordData.confirmPassword,
+                  passwordsMatch: resetPasswordData.newPassword === resetPasswordData.confirmPassword,
+                  passwordLength: resetPasswordData.newPassword?.length || 0,
+                  isValid: resetPasswordData.newPassword && 
+                          resetPasswordData.confirmPassword && 
+                          resetPasswordData.newPassword === resetPasswordData.confirmPassword && 
+                          resetPasswordData.newPassword.length >= 6
+                });
+                handlePasswordReset(); 
+              }} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    New Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={resetPasswordData.showPassword ? 'text' : 'password'}
+                      value={resetPasswordData.newPassword}
+                      onChange={(e) => setResetPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                      placeholder="Enter new password"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setResetPasswordData(prev => ({ ...prev, showPassword: !prev.showPassword }))}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    >
+                      <Icon name={resetPasswordData.showPassword ? 'eye-off' : 'eye'} size={18} />
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Minimum 6 characters required
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Confirm Password
+                  </label>
+                  <input
+                    type={resetPasswordData.showPassword ? 'text' : 'password'}
+                    value={resetPasswordData.confirmPassword}
+                    onChange={(e) => setResetPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                    placeholder="Confirm new password"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  />
+                </div>
+
+                {/* Password Strength Indicator */}
+                {resetPasswordData.newPassword && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-600 dark:text-gray-400">Password Strength:</span>
+                      <span className={`font-medium ${
+                        resetPasswordData.newPassword.length < 6 ? 'text-red-500' :
+                        resetPasswordData.newPassword.length < 8 ? 'text-yellow-500' :
+                        resetPasswordData.newPassword.length < 12 ? 'text-blue-500' : 'text-green-500'
+                      }`}>
+                        {resetPasswordData.newPassword.length < 6 ? 'Weak' :
+                         resetPasswordData.newPassword.length < 8 ? 'Fair' :
+                         resetPasswordData.newPassword.length < 12 ? 'Good' : 'Strong'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div 
+                        className={`h-2 rounded-full transition-all duration-300 ${
+                          resetPasswordData.newPassword.length < 6 ? 'bg-red-500 w-1/4' :
+                          resetPasswordData.newPassword.length < 8 ? 'bg-yellow-500 w-1/2' :
+                          resetPasswordData.newPassword.length < 12 ? 'bg-blue-500 w-3/4' : 'bg-green-500 w-full'
+                        }`}
+                      ></div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Password Match Indicator */}
+                {resetPasswordData.confirmPassword && (
+                  <div className="flex items-center space-x-2">
+                    <Icon 
+                      name={resetPasswordData.newPassword === resetPasswordData.confirmPassword ? 'check-circle' : 'x-circle'} 
+                      size={16} 
+                      className={resetPasswordData.newPassword === resetPasswordData.confirmPassword ? 'text-green-500' : 'text-red-500'} 
+                    />
+                    <span className={`text-sm ${
+                      resetPasswordData.newPassword === resetPasswordData.confirmPassword ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                    }`}>
+                      {resetPasswordData.newPassword === resetPasswordData.confirmPassword ? 'Passwords match' : 'Passwords do not match'}
+                    </span>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex justify-end space-x-3 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                  <button
+                    type="button"
+                    onClick={closeResetPasswordModal}
+                    className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    onClick={() => {
+                      console.log('Submit button clicked!');
+                      console.log('Button disabled state:', {
+                        loading,
+                        hasNewPassword: !!resetPasswordData.newPassword,
+                        hasConfirmPassword: !!resetPasswordData.confirmPassword,
+                        passwordsMatch: resetPasswordData.newPassword === resetPasswordData.confirmPassword,
+                        passwordLength: resetPasswordData.newPassword?.length || 0,
+                        isDisabled: loading || !resetPasswordData.newPassword || !resetPasswordData.confirmPassword || resetPasswordData.newPassword !== resetPasswordData.confirmPassword || resetPasswordData.newPassword.length < 6
+                      });
+                    }}
+                    disabled={loading || !resetPasswordData.newPassword || !resetPasswordData.confirmPassword || resetPasswordData.newPassword !== resetPasswordData.confirmPassword || resetPasswordData.newPassword.length < 6}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center"
+                  >
+                    {loading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Updating...
+                      </>
+                    ) : (
+                      <>
+                        <Icon name="key" size={16} className="mr-2" />
+                        Update Password
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -67,11 +67,19 @@ const Navbar = ({ onMenuClick }) => {
             />
           </div>
 
-          {/* User info and logout */}
+          {/* User info and actions */}
           <div className="flex items-center space-x-2">
             <span className="hidden sm:inline text-sm text-gray-600 dark:text-gray-400">
               Welcome, {user?.username}
             </span>
+            <a
+              href="/profile"
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 transition-colors touch-manipulation"
+              title="Profile Settings"
+              aria-label="Profile Settings"
+            >
+              <Icon name="user" size={18} />
+            </a>
             <button
               onClick={handleLogout}
               className="px-3 py-1 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors touch-manipulation"
