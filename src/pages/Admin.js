@@ -541,7 +541,7 @@ const Admin = () => {
 
       {/* Tab Navigation */}
       <div className="card p-0 overflow-hidden">
-        <div className="flex border-b border-gray-200 dark:border-gray-700">
+        <div className="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto scrollbar-hide">
           {[
             { id: 'users', name: 'User Management', icon: 'users' },
             { id: 'sensors', name: 'Sensor Management', icon: 'sensor' },
@@ -553,14 +553,15 @@ const Admin = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 flex items-center justify-center px-4 py-3 text-sm font-medium ${
+              className={`flex-shrink-0 flex items-center justify-center px-4 py-3 text-sm font-medium whitespace-nowrap min-w-max ${
                 activeTab === tab.id
                   ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-500'
                   : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
               <Icon name={tab.icon} size={16} className="mr-2" />
-              {tab.name}
+              <span className="hidden sm:inline">{tab.name}</span>
+              <span className="sm:hidden">{tab.name.split(' ')[0]}</span>
             </button>
           ))}
         </div>
